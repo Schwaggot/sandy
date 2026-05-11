@@ -35,6 +35,7 @@ RUN apt-get install -y --no-install-recommends \
 RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/* \
+    && npm install -g npm@latest \
     && npm install -g pnpm typescript
 
 # uv (Astral) - fast Python package manager.
