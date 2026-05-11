@@ -40,6 +40,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.tag.outputs.tag }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-base:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-base:buildcache,mode=max
       - name: trivy scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -72,6 +74,8 @@ jobs:
           build-args: |
             BASE_IMAGE=${{ needs.base.outputs.base_tag }}
           tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-toolchain-${{ matrix.toolchain }}:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-toolchain-${{ matrix.toolchain }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-toolchain-${{ matrix.toolchain }}:buildcache,mode=max
       - name: trivy scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -116,6 +120,8 @@ jobs:
           build-args: |
             BASE_IMAGE=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-toolchain-${{ matrix.toolchain }}:latest
           tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-${{ matrix.agent }}-${{ matrix.toolchain }}:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-${{ matrix.agent }}-${{ matrix.toolchain }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-${{ matrix.agent }}-${{ matrix.toolchain }}:buildcache,mode=max
       - name: trivy scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
