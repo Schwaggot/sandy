@@ -5,9 +5,9 @@ Sandy is a CLI that runs AI coding agents inside sandboxed containers, using eac
 ## Goals
 
 - `cd <project> && sandy <agent>` runs the agent in a container with the project mounted.
-- Reuse the user's existing agent config (read-only mount).
+- Reuse the user's existing agent config (read/write mount; agents write sessions, locks, and preferences).
 - Filesystem, network, and capability isolation by default.
-- Extensible to new agents and toolchains without modifying sandy.
+- Extensible to new agents without modifying sandy.
 - Cross-platform: macOS, Linux, Windows.
 - Container runtime swappable (Docker now, Podman later).
 
@@ -75,17 +75,20 @@ YAML, declarative. Bundled defaults for `pi`, `opencode`, `claude` (Claude Code 
 
 ```yaml
 name: pi
-image: ghcr.io/<owner>/sandy-pi-{toolchain}  # {toolchain} substituted per project
+image: "{{registry}}/sandy-pi-{{toolchain}}:latest"  # placeholders resolved per project
 command: ["pi"]
-env_passthrough: [ANTHROPIC_API_KEY]
+env_passthrough: [ANTHROPIC_API_KEY]   # in addition to TERM/COLORTERM which sandy adds automatically
 config_mounts:
   - host:
       linux: ~/.pi
       darwin: ~/.pi
       windows: ~/.pi
     container: /home/sandy/.pi
-    mode: ro
+    mode: rw                            # rw because pi writes sessions and lock files
+    # optional: true                    # skip the mount silently if the host path does not exist
 ```
+
+Multiple `config_mounts` entries are allowed; the claude manifest mounts both `~/.claude/` and `~/.claude.json` (the latter as `optional`).
 
 ## Profiles
 
@@ -160,21 +163,35 @@ v1 default profile is `open`. v2 promotes `restricted` to default.
 
 - `--cap-drop ALL`
 - `--security-opt no-new-privileges`
-- `--read-only` rootfs, with explicit `tmpfs` for `/tmp` and named-volume mounts for writable cache paths
+- `--read-only` rootfs, with `tmpfs /tmp:rw,exec,nosuid,nodev,size=512m` and a named home volume for writable paths. `exec` on the tmpfs is required so Bun-based agents (e.g. opencode) can `dlopen` the native shared library they extract there.
 - Non-root user
 - `--pids-limit`, `--memory`, `--cpus` set in profile
 
 ## Secrets
 
-- Agents that already store credentials in their config dir get them via the read-only mount.
-- Manifest `env_passthrough` declares host env vars to forward (e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`).
+- Agents that already store credentials in their config dir get them via the bind mount.
+- Manifest `env_passthrough` declares host env vars to forward (e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`). Sandy always passes `TERM` and `COLORTERM` so terminal capabilities reach the agent.
+- Values are forwarded by *name* only (`docker run -e KEY`), never by value, so secrets never appear in `--dry-run` output, shell history, or process listings.
+- macOS Claude Code: the host client stores OAuth credentials in the keychain, not in `~/.claude/.credentials.json`. The keychain is not reachable from the container, so the first `sandy claude` run prompts `/login`; the resulting `~/.claude/.credentials.json` lives in the RW mount and is reused for subsequent runs.
 
 ## `sandy init`
 
-1. Inspect project for: `pyproject.toml`, `requirements.txt`, `package.json`, `CMakeLists.txt`, `conanfile.{txt,py}`, `Cargo.toml`.
-2. Prompt: agent, profile, toolchain(s).
-3. If chosen combination matches a published image, write `.sandy/config.yaml` only.
-4. Otherwise, write `.sandy/config.yaml` and `.sandy/Dockerfile` FROM the closest published image with extra tool install steps.
+1. Inspect project for: `pyproject.toml`, `requirements.txt`, `package.json`, `CMakeLists.txt`, `conanfile.{txt,py}`, `Cargo.toml` (informational; no per-toolchain images are published in v1).
+2. Prompt for `profile` (default `open`); skipped with `--non-interactive`.
+3. Write `.sandy/config.yaml` with `toolchain: fullstack` and the chosen profile.
+
+Refuses to overwrite an existing `.sandy/config.yaml` unless `--force` is passed.
+
+## Distribution and authentication
+
+- Binaries published as a GitHub Release on each `vX.Y.Z` tag via goreleaser (darwin/linux/windows × amd64/arm64).
+- Images published to `ghcr.io/<owner>/`. ghcr.io packages are private by default even if the repository is public; users authenticate on each machine once with a PAT that has `read:packages`:
+
+```
+echo 'ghp_TOKEN' | docker login ghcr.io -u <user> --password-stdin
+```
+
+Credentials persist in `~/.docker/config.json`.
 
 ## Extensibility
 
@@ -184,5 +201,5 @@ v1 default profile is `open`. v2 promotes `restricted` to default.
 
 ## v1 -> v2
 
-- v1: cross-platform CLI, layered images for pi/opencode/claude on python/cpp/node/fullstack, `offline` and `open` profiles, ephemeral runs, hardening defaults, `sandy init`.
-- v2: `restricted` profile with proxy sidecar and allowlist, Podman support wired through the `Runtime` interface, additional toolchains (Rust), optional Homebrew tap and Scoop bucket.
+- v1: cross-platform CLI, fullstack-only image set for pi/opencode/claude, `offline` and `open` profiles, ephemeral runs, hardening defaults, `sandy init`.
+- v2: `restricted` profile with proxy sidecar and allowlist, Podman support wired through the `Runtime` interface, per-language toolchain images (slim builds), optional Homebrew tap and Scoop bucket.

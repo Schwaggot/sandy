@@ -50,6 +50,18 @@ repeat this until the token expires.
 Alternatively, flip each `sandy-*` package to public visibility at
 https://github.com/<user>?tab=packages and skip the login entirely.
 
+### First-run notes
+
+- **Claude Code (macOS host)**: the host client keeps OAuth credentials in
+  the macOS keychain, which the container cannot read. On the first
+  `sandy claude` you will be prompted to `/login`. After authenticating,
+  `~/.claude/.credentials.json` lives in the bind-mounted config dir and is
+  reused for subsequent runs.
+- **Local model endpoints (LM Studio etc.)**: use `host.docker.internal` as
+  the hostname in your agent config, not `127.0.0.1` or `localhost` (those
+  refer to the container, not the host). Sandy already adds the host-gateway
+  mapping so this just works.
+
 ## Usage
 
 ```
