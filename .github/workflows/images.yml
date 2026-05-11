@@ -40,6 +40,14 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.tag.outputs.tag }}
+      - name: trivy scan
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          image-ref: ${{ steps.tag.outputs.tag }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
 
   toolchains:
     needs: base
@@ -64,6 +72,14 @@ jobs:
           build-args: |
             BASE_IMAGE=${{ needs.base.outputs.base_tag }}
           tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-toolchain-${{ matrix.toolchain }}:latest
+      - name: trivy scan
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-toolchain-${{ matrix.toolchain }}:latest
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
 
   agents:
     needs: toolchains
@@ -100,3 +116,11 @@ jobs:
           build-args: |
             BASE_IMAGE=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-toolchain-${{ matrix.toolchain }}:latest
           tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-${{ matrix.agent }}-${{ matrix.toolchain }}:latest
+      - name: trivy scan
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-${{ matrix.agent }}-${{ matrix.toolchain }}:latest
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table

@@ -1,0 +1,27 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: docker
+    directories:
+      - /images/base
+      - /images/toolchain-python
+      - /images/toolchain-cpp
+      - /images/toolchain-node
+      - /images/toolchain-fullstack
+      - /images/agent-pi
+      - /images/agent-opencode
+      - /images/agent-claude
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
