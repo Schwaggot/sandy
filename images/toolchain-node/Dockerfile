@@ -11,4 +11,8 @@ RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \
     && npm install -g npm@latest \
     && npm install -g pnpm typescript
 
+# Build-time tools may have created root-owned dirs under /home/sandy;
+# return ownership so the runtime sandy user can write to its caches.
+RUN chown -R sandy:sandy /home/sandy
+
 USER sandy

@@ -49,4 +49,8 @@ RUN UV_TOOL_BIN_DIR=/usr/local/bin UV_TOOL_DIR=/opt/uv-tools \
         uv tool install pytest \
     && chmod -R a+rX /opt/uv-tools
 
+# Build-time tools may have created root-owned dirs under /home/sandy;
+# return ownership so the runtime sandy user can write to its caches.
+RUN chown -R sandy:sandy /home/sandy
+
 USER sandy

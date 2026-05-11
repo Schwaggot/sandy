@@ -3,9 +3,7 @@ FROM ${BASE_IMAGE}
 
 USER root
 
-# Install pi CLI. Adjust this to the canonical install method for pi.
-# Adjust to pi's canonical install method.
-RUN curl -fsSL https://pi.ai/install.sh | bash
+RUN curl -fsSL https://pi.dev/install.sh | sh
 
 USER sandy
 

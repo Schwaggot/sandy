@@ -25,4 +25,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && pip3 install --no-cache-dir --break-system-packages conan
 
+# Build-time tools may have created root-owned dirs under /home/sandy;
+# return ownership so the runtime sandy user can write to its caches.
+RUN chown -R sandy:sandy /home/sandy
+
 USER sandy
