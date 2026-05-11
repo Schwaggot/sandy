@@ -96,7 +96,9 @@ func Build(cfg config.Config, m agent.Manifest, p profile.Profile, projectRoot s
 	}
 	spec.ReadOnly = p.Hardening.ReadOnlyRootfs
 	if spec.ReadOnly {
-		spec.Tmpfs = append(spec.Tmpfs, "/tmp:rw,nosuid,nodev,size=512m")
+		// Bun-based agents (opencode) extract a native .so into /tmp and
+		// dlopen it; need exec on the tmpfs.
+		spec.Tmpfs = append(spec.Tmpfs, "/tmp:rw,exec,nosuid,nodev,size=512m")
 	}
 	spec.PidsLimit = p.Resources.Pids
 	spec.Memory = p.Resources.Memory

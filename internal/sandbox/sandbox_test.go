@@ -92,7 +92,7 @@ func TestBuildBasic(t *testing.T) {
 	if !contains(spec.CapDrop, "ALL") {
 		t.Errorf("cap-drop ALL missing")
 	}
-	if !contains(spec.Tmpfs, "/tmp:rw,nosuid,nodev,size=512m") {
+	if !contains(spec.Tmpfs, "/tmp:rw,exec,nosuid,nodev,size=512m") {
 		t.Errorf("tmpfs /tmp missing: %v", spec.Tmpfs)
 	}
 
