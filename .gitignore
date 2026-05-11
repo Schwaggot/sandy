@@ -1,0 +1,23 @@
+# Build artifacts
+/dist/
+/bin/
+/sandy
+/sandy.exe
+
+# Go
+*.test
+*.out
+/coverage.txt
+/vendor/
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local config / secrets
+.env
+.env.*
+!.env.example

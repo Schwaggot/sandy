@@ -1,0 +1,13 @@
+name: pi
+description: Pi coding agent
+image: "{{registry}}/sandy-pi-{{toolchain}}:latest"
+command: ["pi"]
+env_passthrough:
+  - ANTHROPIC_API_KEY
+config_mounts:
+  - host:
+      linux: ~/.pi
+      darwin: ~/.pi
+      windows: ~/.pi
+    container: /home/sandy/.pi
+    mode: ro

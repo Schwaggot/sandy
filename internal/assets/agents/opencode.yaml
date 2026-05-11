@@ -1,0 +1,21 @@
+name: opencode
+description: OpenCode coding agent
+image: "{{registry}}/sandy-opencode-{{toolchain}}:latest"
+command: ["opencode"]
+env_passthrough:
+  - ANTHROPIC_API_KEY
+  - OPENAI_API_KEY
+config_mounts:
+  - host:
+      linux: ~/.config/opencode
+      darwin: ~/.config/opencode
+      windows: ~/.config/opencode
+    container: /home/sandy/.config/opencode
+    mode: ro
+  - host:
+      linux: ~/.opencode
+      darwin: ~/.opencode
+      windows: ~/.opencode
+    container: /home/sandy/.opencode
+    mode: ro
+    optional: true

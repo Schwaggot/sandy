@@ -1,0 +1,11 @@
+name: open
+network: open
+resources:
+  memory: 4g
+  cpus: "2"
+  pids: 1024
+hardening:
+  cap_drop: [ALL]
+  no_new_privileges: true
+  read_only_rootfs: true
+allowlist_domains: []

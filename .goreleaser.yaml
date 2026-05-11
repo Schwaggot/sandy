@@ -1,0 +1,51 @@
+version: 2
+
+project_name: sandy
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: sandy
+    main: ./cmd/sandy
+    binary: sandy
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X github.com/schwaggot/sandy/internal/cli.Version={{ .Version }}
+
+archives:
+  - id: sandy
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+      - docs/**/*
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"

@@ -1,0 +1,37 @@
+# Normalize line endings on checkin; check out native by default.
+* text=auto eol=lf
+
+# Explicitly LF for files that must stay LF on all platforms.
+*.go        text eol=lf
+*.sh        text eol=lf
+*.yaml      text eol=lf
+*.yml       text eol=lf
+*.md        text eol=lf
+*.toml      text eol=lf
+*.json      text eol=lf
+Dockerfile  text eol=lf
+*.dockerfile text eol=lf
+Makefile    text eol=lf
+go.mod      text eol=lf
+go.sum      text eol=lf
+
+# Windows scripts keep CRLF.
+*.ps1       text eol=crlf
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+
+# Binary files: no diff/merge attempts.
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.pdf       binary
+*.zip       binary
+*.tar.gz    binary
+*.tgz       binary
+
+# Language stats and release archive exclusions.
+docs/**         linguist-documentation export-ignore
+images/**       linguist-vendored=false
+.github/**      export-ignore

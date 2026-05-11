@@ -1,0 +1,13 @@
+name: claude
+description: Claude Code CLI
+image: "{{registry}}/sandy-claude-{{toolchain}}:latest"
+command: ["claude"]
+env_passthrough:
+  - ANTHROPIC_API_KEY
+config_mounts:
+  - host:
+      linux: ~/.claude
+      darwin: ~/.claude
+      windows: ~/.claude
+    container: /home/sandy/.claude
+    mode: ro
