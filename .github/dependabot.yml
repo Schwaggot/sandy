@@ -15,9 +15,6 @@ updates:
   - package-ecosystem: docker
     directories:
       - /images/base
-      - /images/toolchain-python
-      - /images/toolchain-cpp
-      - /images/toolchain-node
       - /images/toolchain-fullstack
       - /images/agent-pi
       - /images/agent-opencode
