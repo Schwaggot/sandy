@@ -10,4 +10,4 @@ config_mounts:
       darwin: ~/.claude
       windows: ~/.claude
     container: /home/sandy/.claude
-    mode: ro
+    mode: rw

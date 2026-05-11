@@ -11,11 +11,11 @@ config_mounts:
       darwin: ~/.config/opencode
       windows: ~/.config/opencode
     container: /home/sandy/.config/opencode
-    mode: ro
+    mode: rw
   - host:
       linux: ~/.opencode
       darwin: ~/.opencode
       windows: ~/.opencode
     container: /home/sandy/.opencode
-    mode: ro
+    mode: rw
     optional: true

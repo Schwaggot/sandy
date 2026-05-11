@@ -114,17 +114,10 @@ All published to `ghcr.io/<owner>/`. Multi-arch: amd64 + arm64. Base: `debian:tr
 ### Layered hierarchy
 
 - `sandy-base` - Debian trixie slim, non-root user `sandy` (uid 1000), `git`, ca-certificates, curl, common utilities, entrypoint.
-- Toolchains FROM `sandy-base`:
-  - `sandy-toolchain-python` - Python 3.13, uv, pip, ruff, pytest.
-  - `sandy-toolchain-cpp` - clang/LLVM, cmake, conan, ninja, build-essential.
-  - `sandy-toolchain-node` - Node LTS, pnpm, TypeScript.
-- Agent-toolchain matrix FROM corresponding toolchain (or a fullstack base):
-  - `sandy-{agent}-{toolchain}` for `agent` in `{pi, opencode, claude}` and `toolchain` in `{python, cpp, node, fullstack}`.
-  - `fullstack` includes all three toolchains.
+- `sandy-toolchain-fullstack` FROM base - Python 3.13 + uv + ruff + pytest, clang/LLVM + cmake + conan + ninja, Node LTS + latest npm + pnpm + TypeScript.
+- `sandy-{pi,opencode,claude}-fullstack` FROM `sandy-toolchain-fullstack` - the agent CLI installed on top.
 
-### Per-project Dockerfile
-
-`sandy init` writes `.sandy/Dockerfile` only when the project needs a combination not covered by the published matrix. The file FROMs a published image and adds project-specific tools. `sandy build` produces a project-tagged local image.
+Per-language toolchain images (python/cpp/node only) are not currently published; their Dockerfiles can be re-added when there is a need to slim things down.
 
 ## Runtime model
 
@@ -136,7 +129,7 @@ All published to `ghcr.io/<owner>/`. Multi-arch: amd64 + arm64. Base: `debian:tr
 ### Mounts
 
 - CWD bind-mounted read/write at `/workspace`; container WORKDIR is `/workspace`.
-- Agent config paths from the manifest bind-mounted read-only.
+- Agent config paths from the manifest bind-mounted read/write (agents like pi/claude/opencode need to write sessions and lock files into their config dir).
 - No `.gitconfig`, no SSH agent forwarding. Commits/pushes happen on the host. `git` is installed in the image; `.git` works because it lives inside the CWD.
 
 ### UID/GID
@@ -150,8 +143,8 @@ All published to `ghcr.io/<owner>/`. Multi-arch: amd64 + arm64. Base: `debian:tr
 
 ### Host services
 
-- Sandy adds `--add-host=host.docker.internal:host-gateway` so LM Studio etc. on the host is reachable at `host.docker.internal:<port>`.
-- LAN endpoints (e.g. `caplon-gpu01.sb.consistec.de`) are reached normally; configured in the user-level allowlist (for v2 restricted profile).
+- Sandy adds `--add-host=host.docker.internal:host-gateway` so host-local services (e.g. LM Studio) are reachable at `host.docker.internal:<port>`.
+- LAN endpoints are reached normally; configured in the user-level allowlist (for v2 restricted profile).
 
 ## Network
 

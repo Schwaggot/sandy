@@ -39,12 +39,12 @@ Agent manifests and profiles ship as `internal/assets/{agents,profiles}/*.yaml`,
 Image hierarchy (built and pushed by `.github/workflows/images.yml`):
 
 ```
-sandy-base                              (debian:trixie-slim + sandy user + entrypoint)
-  -> sandy-toolchain-{python,cpp,node,fullstack}    (BASE_IMAGE build arg)
-       -> sandy-{pi,opencode,claude}-{toolchain}    (final agent layer)
+sandy-base                       (debian:trixie-slim + sandy user + entrypoint)
+  -> sandy-toolchain-fullstack   (Python 3.13 + uv, C++/LLVM, Node + npm/pnpm)
+       -> sandy-{pi,opencode,claude}-fullstack    (final agent layer)
 ```
 
-Default registry `ghcr.io/schwaggot`; overridable in config. Agent manifest's `image:` field templates `{{registry}}` and `{{toolchain}}`.
+Only `fullstack` is currently published. Default registry `ghcr.io/schwaggot`; overridable in config. Agent manifest's `image:` field templates `{{registry}}` and `{{toolchain}}` (always resolves to `fullstack` for now).
 
 ## Project-specific invariants
 

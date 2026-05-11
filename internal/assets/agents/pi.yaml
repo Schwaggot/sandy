@@ -10,4 +10,4 @@ config_mounts:
       darwin: ~/.pi
       windows: ~/.pi
     container: /home/sandy/.pi
-    mode: ro
+    mode: rw
