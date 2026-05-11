@@ -26,8 +26,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-RUN groupadd --gid ${SANDY_GID} sandy \
-    && useradd --uid ${SANDY_UID} --gid ${SANDY_GID} --create-home --shell /bin/bash sandy \
+# Absolute paths because the runtime PATH we set above excludes /usr/sbin.
+RUN /usr/sbin/groupadd --gid ${SANDY_GID} sandy \
+    && /usr/sbin/useradd --uid ${SANDY_UID} --gid ${SANDY_GID} --create-home --shell /bin/bash sandy \
     && mkdir -p /workspace \
     && chown sandy:sandy /workspace \
     # Sticky world-writable home so the container works under any --user UID/GID.
