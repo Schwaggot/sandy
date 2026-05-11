@@ -25,6 +25,31 @@ iwr -useb https://raw.githubusercontent.com/schwaggot/sandy/main/scripts/install
 
 Requires Docker (recent version) on the host.
 
+### Authenticate to ghcr.io
+
+The agent and toolchain images live on GitHub Container Registry. If the
+packages are private (the default for new packages, even when the repo
+itself is public), Docker has to authenticate before `sandy pull` or
+`sandy <agent>` can fetch them.
+
+1. Create a personal access token at
+   https://github.com/settings/tokens/new with the **`read:packages`**
+   scope (classic tokens work; fine-grained tokens work too if you grant
+   "Read access to packages").
+2. Log in once per machine:
+
+   ```
+   echo 'ghp_YOUR_TOKEN' | docker login ghcr.io -u <user> --password-stdin
+   ```
+
+   Replace `<user>` with your GitHub username.
+
+The credentials persist in `~/.docker/config.json`; you do not need to
+repeat this until the token expires.
+
+Alternatively, flip each `sandy-*` package to public visibility at
+https://github.com/<user>?tab=packages and skip the login entirely.
+
 ## Usage
 
 ```
