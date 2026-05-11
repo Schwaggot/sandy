@@ -14,7 +14,9 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  OWNER: ${{ github.repository_owner }}
+  # ghcr.io requires lowercase. Hardcoded because GitHub Actions has no
+  # built-in lowercase function and github.repository_owner preserves case.
+  OWNER: schwaggot
 
 jobs:
   base:

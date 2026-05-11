@@ -179,7 +179,9 @@ func TestBuildOptionalMountSkipped(t *testing.T) {
 }
 
 func TestBuildPassthroughOnlyExported(t *testing.T) {
-	os.Unsetenv("UNSET_TOKEN")
+	if err := os.Unsetenv("UNSET_TOKEN"); err != nil {
+		t.Fatal(err)
+	}
 	m := agent.Manifest{
 		Image:          "x:y",
 		Command:        []string{"a"},
