@@ -51,12 +51,11 @@ jobs:
           exit-code: "1"
           format: table
 
-  toolchains:
+  toolchain:
     needs: base
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        toolchain: [python, cpp, node, fullstack]
+    outputs:
+      toolchain_tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-qemu-action@v4
@@ -66,43 +65,33 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - id: tag
+        run: echo "tag=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-toolchain-fullstack:latest" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v7
         with:
-          context: images/toolchain-${{ matrix.toolchain }}
+          context: images/toolchain-fullstack
           platforms: linux/amd64,linux/arm64
           push: true
           build-args: |
             BASE_IMAGE=${{ needs.base.outputs.base_tag }}
-          tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-toolchain-${{ matrix.toolchain }}:latest
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-toolchain-${{ matrix.toolchain }}:buildcache
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-toolchain-${{ matrix.toolchain }}:buildcache,mode=max
+          tags: ${{ steps.tag.outputs.tag }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-toolchain-fullstack:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-toolchain-fullstack:buildcache,mode=max
       - name: trivy scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-toolchain-${{ matrix.toolchain }}:latest
+          image-ref: ${{ steps.tag.outputs.tag }}
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
           format: table
 
   agents:
-    needs: toolchains
+    needs: toolchain
     runs-on: ubuntu-latest
     strategy:
       matrix:
         agent: [pi, opencode, claude]
-        toolchain: [python, cpp, node, fullstack]
-        exclude:
-          # OpenCode and Claude Code need node; skip cpp/python-only variants
-          # to avoid publishing broken images.
-          - agent: opencode
-            toolchain: python
-          - agent: opencode
-            toolchain: cpp
-          - agent: claude
-            toolchain: python
-          - agent: claude
-            toolchain: cpp
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-qemu-action@v4
@@ -118,14 +107,14 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           build-args: |
-            BASE_IMAGE=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-toolchain-${{ matrix.toolchain }}:latest
-          tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-${{ matrix.agent }}-${{ matrix.toolchain }}:latest
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-${{ matrix.agent }}-${{ matrix.toolchain }}:buildcache
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-${{ matrix.agent }}-${{ matrix.toolchain }}:buildcache,mode=max
+            BASE_IMAGE=${{ needs.toolchain.outputs.toolchain_tag }}
+          tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-${{ matrix.agent }}-fullstack:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-${{ matrix.agent }}-fullstack:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-${{ matrix.agent }}-fullstack:buildcache,mode=max
       - name: trivy scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-${{ matrix.agent }}-${{ matrix.toolchain }}:latest
+          image-ref: ${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-${{ matrix.agent }}-fullstack:latest
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"

@@ -13,10 +13,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	toolchainChoices = []string{"python", "cpp", "node", "fullstack"}
-	profileChoices   = []string{"open", "offline"}
-)
+var profileChoices = []string{"open", "offline"}
 
 func newInitCmd() *cobra.Command {
 	var (
@@ -36,23 +33,16 @@ func newInitCmd() *cobra.Command {
 				return fmt.Errorf("%s already exists; pass --force to overwrite", target)
 			}
 
+			// Only the fullstack toolchain is currently published. Detection is
+			// still done so users can see what's in their project.
 			detected := project.DetectToolchains(cwd)
-			defaultToolchain := project.PickToolchain(detected)
-
-			if len(detected) == 0 {
-				fmt.Println("No language markers detected in this directory.")
-			} else {
+			if len(detected) > 0 {
 				fmt.Printf("Detected toolchains: %s\n", strings.Join(detected, ", "))
 			}
 
 			in := bufio.NewReader(os.Stdin)
-			toolchain := defaultToolchain
 			prof := config.DefaultProfile
 			if !nonInteractive {
-				toolchain, err = promptChoice(in, "Toolchain", toolchainChoices, defaultToolchain)
-				if err != nil {
-					return err
-				}
 				prof, err = promptChoice(in, "Profile", profileChoices, config.DefaultProfile)
 				if err != nil {
 					return err
@@ -61,14 +51,14 @@ func newInitCmd() *cobra.Command {
 
 			cfg := config.Config{
 				Profile:       prof,
-				Toolchain:     toolchain,
+				Toolchain:     config.DefaultToolchain,
 				ImageRegistry: config.DefaultRegistry,
 				Runtime:       "docker",
 			}
 			if err := config.Write(cwd, cfg); err != nil {
 				return err
 			}
-			fmt.Printf("Wrote %s (toolchain=%s profile=%s)\n", target, toolchain, prof)
+			fmt.Printf("Wrote %s (profile=%s)\n", target, prof)
 			return nil
 		},
 	}
