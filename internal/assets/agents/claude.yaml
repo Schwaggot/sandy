@@ -11,3 +11,10 @@ config_mounts:
       windows: ~/.claude
     container: /home/sandy/.claude
     mode: rw
+  - host:
+      linux: ~/.claude.json
+      darwin: ~/.claude.json
+      windows: ~/.claude.json
+    container: /home/sandy/.claude.json
+    mode: rw
+    optional: true

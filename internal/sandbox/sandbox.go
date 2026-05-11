@@ -68,7 +68,8 @@ func Build(cfg config.Config, m agent.Manifest, p profile.Profile, projectRoot s
 	// Env passthrough: docker reads the value from the caller's environment.
 	// We never copy the value into the command line, so secrets stay out of
 	// dry-run output and process listings.
-	for _, k := range m.EnvPassthrough {
+	passthrough := append([]string{"TERM", "COLORTERM"}, m.EnvPassthrough...)
+	for _, k := range passthrough {
 		if _, ok := os.LookupEnv(k); ok {
 			spec.EnvPassthrough = append(spec.EnvPassthrough, k)
 		}
