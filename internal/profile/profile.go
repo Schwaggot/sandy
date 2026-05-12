@@ -26,10 +26,14 @@ type Resources struct {
 }
 
 type Hardening struct {
-	CapDrop          []string `yaml:"cap_drop"`
-	CapAdd           []string `yaml:"cap_add"`
-	NoNewPrivileges  bool     `yaml:"no_new_privileges"`
-	ReadOnlyRootfs   bool     `yaml:"read_only_rootfs"`
+	CapDrop         []string `yaml:"cap_drop"`
+	CapAdd          []string `yaml:"cap_add"`
+	NoNewPrivileges bool     `yaml:"no_new_privileges"`
+	ReadOnlyRootfs  bool     `yaml:"read_only_rootfs"`
+	// ReadOnlyWorkspace mounts the project root read-only at /workspace.
+	// Useful for exploration-only sessions; rw extra_mounts still override
+	// to keep specific paths writable.
+	ReadOnlyWorkspace bool `yaml:"read_only_workspace"`
 }
 
 // LoadAll loads bundled profiles plus any in ~/.sandy/profiles/.

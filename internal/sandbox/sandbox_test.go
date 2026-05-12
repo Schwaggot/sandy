@@ -357,6 +357,48 @@ func TestBuildExtraMountRelativeTargetRejected(t *testing.T) {
 	}
 }
 
+func TestBuildReadOnlyWorkspace(t *testing.T) {
+	configDir := t.TempDir()
+	m := newManifest(t, configDir)
+	p := newProfile()
+	p.Hardening.ReadOnlyWorkspace = true
+
+	spec, err := Build(config.Config{ImageRegistry: "x", Toolchain: "f"}, m, p, t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cwd := findMount(spec.Mounts, "/workspace")
+	if cwd == nil {
+		t.Fatalf("/workspace mount missing: %+v", spec.Mounts)
+	}
+	if !cwd.ReadOnly {
+		t.Errorf("workspace must be read-only when profile sets ReadOnlyWorkspace")
+	}
+}
+
+func TestBuildReadOnlyWorkspaceWithRWExtraMount(t *testing.T) {
+	// RW extra_mount should remain writable even when the workspace is RO,
+	// because docker applies each mount independently.
+	src := t.TempDir()
+	cfg := config.Config{
+		ImageRegistry: "x", Toolchain: "f",
+		ExtraMounts: []config.ExtraMount{{Source: src, Target: "/workspace/scratch", Mode: "rw"}},
+	}
+	p := newProfile()
+	p.Hardening.ReadOnlyWorkspace = true
+
+	spec, err := Build(cfg, newManifest(t, t.TempDir()), p, t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cwd := findMount(spec.Mounts, "/workspace"); cwd == nil || !cwd.ReadOnly {
+		t.Errorf("workspace should be RO: %+v", cwd)
+	}
+	if scratch := findMount(spec.Mounts, "/workspace/scratch"); scratch == nil || scratch.ReadOnly {
+		t.Errorf("RW extra mount should override the RO workspace: %+v", scratch)
+	}
+}
+
 func TestBuildExtraMountTildeUserFormRejected(t *testing.T) {
 	src := t.TempDir()
 	cfg := config.Config{

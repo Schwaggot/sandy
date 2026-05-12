@@ -105,6 +105,7 @@ hardening:
   cap_drop: [ALL]
   no_new_privileges: true
   read_only_rootfs: true
+  read_only_workspace: false  # set true for exploration-only sessions
 allowlist_domains: []       # used by restricted (v2)
 ```
 
@@ -131,7 +132,7 @@ Per-language toolchain images (python/cpp/node only) are not currently published
 
 ### Mounts
 
-- CWD bind-mounted read/write at `/workspace`; container WORKDIR is `/workspace`.
+- CWD bind-mounted read/write at `/workspace`; container WORKDIR is `/workspace`. The profile's `hardening.read_only_workspace` flips this to read-only for exploration-only sessions; rw `extra_mounts` under `/workspace/...` still override and stay writable.
 - Agent config paths from the manifest bind-mounted read/write (agents like pi/claude/opencode need to write sessions and lock files into their config dir).
 - Additional host paths can be bound via the `extra_mounts` config field (see below); default is read-only.
 - No `.gitconfig`, no SSH agent forwarding. Commits/pushes happen on the host. `git` is installed in the image; `.git` works because it lives inside the CWD.

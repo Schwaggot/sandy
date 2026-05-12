@@ -36,10 +36,13 @@ func Build(cfg config.Config, m agent.Manifest, p profile.Profile, projectRoot s
 		AutoRemove:  true,
 	}
 
-	// CWD bind mount.
+	// CWD bind mount. Read-only when the profile requests an
+	// exploration-only posture; rw extra_mounts can still re-open specific
+	// subpaths because docker applies each mount independently.
 	spec.Mounts = append(spec.Mounts, runtime.Mount{
-		Source: projectRoot,
-		Target: containerWorkspace,
+		Source:   projectRoot,
+		Target:   containerWorkspace,
+		ReadOnly: p.Hardening.ReadOnlyWorkspace,
 	})
 
 	// Per-project home volume (writable).
