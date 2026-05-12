@@ -27,6 +27,22 @@ type Config struct {
 	// rendered as docker --add-host. Project entries override user entries
 	// on key collision. Reserved: "host.docker.internal" (sandy sets it).
 	ExtraHosts map[string]string `yaml:"extra_hosts"`
+	// Agents holds per-agent configuration. The map key is the agent name
+	// (matches the manifest's name field).
+	Agents map[string]AgentConfig `yaml:"agents"`
+}
+
+// AgentConfig holds per-agent settings. Currently only inference endpoints.
+type AgentConfig struct {
+	Endpoints []Endpoint `yaml:"endpoints"`
+}
+
+// Endpoint describes one inference endpoint wired into the agent.
+// Sandy translates this into per-protocol env vars and optional --add-host.
+type Endpoint struct {
+	Protocol string `yaml:"protocol"` // openai | anthropic
+	URL      string `yaml:"url"`      // required for openai; optional for anthropic
+	AddHost  string `yaml:"add_host"` // optional; IP for the URL hostname when DNS cannot resolve it
 }
 
 // ExtraMount is an additional host path bound into the sandbox, declared in
@@ -113,6 +129,45 @@ func merge(dst *Config, src Config) {
 			dst.ExtraHosts[k] = v
 		}
 	}
+	// Per-agent endpoints merge by (agent, protocol). Project entries replace
+	// user entries on protocol collision; other protocols are preserved.
+	for name, srcAgent := range src.Agents {
+		if dst.Agents == nil {
+			dst.Agents = map[string]AgentConfig{}
+		}
+		merged := dst.Agents[name]
+		merged.Endpoints = mergeEndpoints(merged.Endpoints, srcAgent.Endpoints)
+		dst.Agents[name] = merged
+	}
+}
+
+// mergeEndpoints returns the union of dst and src, where src entries replace
+// dst entries with the same protocol. dst entries with no protocol match in
+// src are preserved.
+func mergeEndpoints(dst, src []Endpoint) []Endpoint {
+	if len(src) == 0 {
+		return dst
+	}
+	srcByProto := map[string]Endpoint{}
+	for _, e := range src {
+		srcByProto[e.Protocol] = e
+	}
+	out := make([]Endpoint, 0, len(dst)+len(src))
+	seen := map[string]bool{}
+	for _, e := range dst {
+		if r, ok := srcByProto[e.Protocol]; ok {
+			out = append(out, r)
+			seen[e.Protocol] = true
+		} else {
+			out = append(out, e)
+		}
+	}
+	for _, e := range src {
+		if !seen[e.Protocol] {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 // Write serializes a project config to <projectRoot>/.sandy/config.yaml.

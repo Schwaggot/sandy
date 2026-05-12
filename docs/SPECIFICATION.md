@@ -67,7 +67,7 @@ Committed; team artifact.
 
 Lowest to highest: built-in defaults < `~/.sandy/config.yaml` < `.sandy/config.yaml` < CLI flags.
 
-Maps deep-merge. Lists are replaced, except `allowlist_domains` and `extra_mounts` which append (user-level entries come first, project-level entries are appended).
+Maps deep-merge. Lists are replaced, except `allowlist_domains` and `extra_mounts` which append (user-level entries come first, project-level entries are appended). The `agents.<name>.endpoints` list merges by `protocol`: project entries replace user entries with the same protocol; user entries for other protocols are preserved.
 
 ## Agent manifests
 
@@ -89,6 +89,52 @@ config_mounts:
 ```
 
 Multiple `config_mounts` entries are allowed; the claude manifest mounts both `~/.claude/` and `~/.claude.json` (the latter as `optional`).
+
+## Inference endpoints
+
+Per-agent inference endpoints are declared in `~/.sandy/config.yaml` (and optionally overridden in `<project>/.sandy/config.yaml`):
+
+```yaml
+agents:
+  pi:
+    endpoints:
+      - protocol: openai
+        url: http://halo:8080/v1
+        add_host: 192.168.188.105
+
+  opencode:
+    endpoints:
+      - protocol: openai
+        url: http://halo:8080/v1
+        add_host: 192.168.188.105
+      - protocol: anthropic
+        # url omitted -> defaults to https://api.anthropic.com
+
+  claude:
+    endpoints:
+      - protocol: anthropic
+```
+
+Schema:
+
+- `protocol` (required): `openai` or `anthropic`.
+- `url` (required for `openai`; optional for `anthropic`, defaults to `https://api.anthropic.com`).
+- `add_host` (optional): IP for the URL's hostname. Used when the container cannot resolve the name (LAN-only / mDNS hosts). The hostname is parsed from `url`. Cannot override `host.docker.internal`.
+
+Per agent, at most one entry per protocol after merging. Duplicates error.
+
+Translation:
+
+| Protocol  | Env set                                              | Env passthrough         |
+|-----------|------------------------------------------------------|-------------------------|
+| `openai`  | `OPENAI_BASE_URL=<url>`                              | `OPENAI_API_KEY`        |
+| `anthropic` | `ANTHROPIC_BASE_URL=<url>` (omitted if default URL) | `ANTHROPIC_API_KEY`     |
+
+API keys are forwarded by name only (`docker -e KEY`), so values never appear in dry-run output or process listings. If your key lives under a non-standard host env var, alias it: `export OPENAI_API_KEY=$MY_TOKEN`.
+
+If no endpoints are configured for an agent, behavior is identical to a sandy install without endpoints: the manifest's `env_passthrough` still forwards `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`, agents reach their default cloud URLs.
+
+Discover with `sandy list endpoints`. No per-run CLI override; edit YAML.
 
 ## Profiles
 

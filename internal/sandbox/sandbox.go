@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -69,6 +70,13 @@ func Build(cfg config.Config, m agent.Manifest, p profile.Profile, projectRoot s
 			Target:   cm.Container,
 			ReadOnly: cm.Mode != "rw",
 		})
+	}
+
+	// Per-agent inference endpoints. Translates each endpoint into env vars
+	// (OPENAI_BASE_URL / ANTHROPIC_BASE_URL), env passthrough for the API key,
+	// and optional --add-host for LAN names with no DNS.
+	if err := applyEndpoints(&spec, cfg.Agents[m.Name].Endpoints); err != nil {
+		return spec, err
 	}
 
 	// Extra hosts from user/project config (rendered as --add-host).
@@ -144,6 +152,67 @@ func Build(cfg config.Config, m agent.Manifest, p profile.Profile, projectRoot s
 	}
 
 	return spec, nil
+}
+
+const anthropicCloudURL = "https://api.anthropic.com"
+
+// applyEndpoints wires each endpoint into the runtime spec. Validates the
+// protocol, enforces per-protocol uniqueness within the agent, and rejects
+// add_host collisions with sandy-managed hostnames.
+func applyEndpoints(spec *runtime.RunSpec, endpoints []config.Endpoint) error {
+	seen := map[string]bool{}
+	for _, ep := range endpoints {
+		switch ep.Protocol {
+		case "openai":
+			if strings.TrimSpace(ep.URL) == "" {
+				return fmt.Errorf("endpoints: openai protocol requires url")
+			}
+			if seen[ep.Protocol] {
+				return fmt.Errorf("endpoints: duplicate %q protocol entries for the same agent", ep.Protocol)
+			}
+			seen[ep.Protocol] = true
+			spec.Env["OPENAI_BASE_URL"] = ep.URL
+			appendUnique(&spec.EnvPassthrough, "OPENAI_API_KEY")
+		case "anthropic":
+			if seen[ep.Protocol] {
+				return fmt.Errorf("endpoints: duplicate %q protocol entries for the same agent", ep.Protocol)
+			}
+			seen[ep.Protocol] = true
+			if u := strings.TrimSpace(ep.URL); u != "" && u != anthropicCloudURL {
+				spec.Env["ANTHROPIC_BASE_URL"] = u
+			}
+			appendUnique(&spec.EnvPassthrough, "ANTHROPIC_API_KEY")
+		default:
+			return fmt.Errorf("endpoints: unknown protocol %q (expected: openai, anthropic)", ep.Protocol)
+		}
+
+		if strings.TrimSpace(ep.AddHost) == "" {
+			continue
+		}
+		urlStr := ep.URL
+		if urlStr == "" {
+			urlStr = anthropicCloudURL
+		}
+		u, err := url.Parse(urlStr)
+		if err != nil || u.Hostname() == "" {
+			return fmt.Errorf("endpoints: cannot parse hostname from url %q: %v", urlStr, err)
+		}
+		host := u.Hostname()
+		if host == "host.docker.internal" {
+			return fmt.Errorf("endpoints: add_host cannot override reserved hostname %q", host)
+		}
+		spec.AddHosts[host] = ep.AddHost
+	}
+	return nil
+}
+
+func appendUnique(dst *[]string, v string) {
+	for _, s := range *dst {
+		if s == v {
+			return
+		}
+	}
+	*dst = append(*dst, v)
 }
 
 // resolveExtraMount validates and resolves a user-declared extra mount.

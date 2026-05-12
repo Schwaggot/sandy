@@ -144,6 +144,88 @@ func TestLoadExtraHostsMergeProjectWins(t *testing.T) {
 	}
 }
 
+func TestLoadAgentEndpointsMergeByProtocol(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	userCfg := filepath.Join(home, ".sandy", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(userCfg), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(userCfg, []byte(
+		"agents:\n  opencode:\n    endpoints:\n      - protocol: openai\n        url: http://halo:8080/v1\n        add_host: 192.168.1.50\n      - protocol: anthropic\n        url: https://api.anthropic.com\n",
+	), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	proj := t.TempDir()
+	projCfg := filepath.Join(proj, ".sandy", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(projCfg), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(projCfg, []byte(
+		"agents:\n  opencode:\n    endpoints:\n      - protocol: openai\n        url: https://api.openai.com/v1\n",
+	), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eps := cfg.Agents["opencode"].Endpoints
+	if len(eps) != 2 {
+		t.Fatalf("want 2 endpoints, got %d: %+v", len(eps), eps)
+	}
+	var openai, anthropic *Endpoint
+	for i := range eps {
+		switch eps[i].Protocol {
+		case "openai":
+			openai = &eps[i]
+		case "anthropic":
+			anthropic = &eps[i]
+		}
+	}
+	if openai == nil || openai.URL != "https://api.openai.com/v1" {
+		t.Errorf("project should replace user's openai entry: %+v", openai)
+	}
+	if anthropic == nil || anthropic.URL != "https://api.anthropic.com" {
+		t.Errorf("user's anthropic entry should survive: %+v", anthropic)
+	}
+}
+
+func TestLoadAgentEndpointsProjectAddsNewProtocol(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	userCfg := filepath.Join(home, ".sandy", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(userCfg), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(userCfg, []byte(
+		"agents:\n  opencode:\n    endpoints:\n      - protocol: openai\n        url: http://halo:8080/v1\n",
+	), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	proj := t.TempDir()
+	projCfg := filepath.Join(proj, ".sandy", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(projCfg), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(projCfg, []byte(
+		"agents:\n  opencode:\n    endpoints:\n      - protocol: anthropic\n",
+	), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eps := cfg.Agents["opencode"].Endpoints
+	if len(eps) != 2 {
+		t.Fatalf("want 2 endpoints (openai from user + anthropic from project), got %d: %+v", len(eps), eps)
+	}
+}
+
 func TestWriteRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	in := Config{Profile: "open", Toolchain: "cpp", ImageRegistry: "ghcr.io/test", Runtime: "docker"}

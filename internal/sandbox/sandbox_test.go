@@ -357,6 +357,178 @@ func TestBuildExtraMountRelativeTargetRejected(t *testing.T) {
 	}
 }
 
+func TestBuildOpenAIEndpoint(t *testing.T) {
+	m := newManifest(t, t.TempDir())
+	m.Name = "opencode"
+	cfg := config.Config{
+		ImageRegistry: "x", Toolchain: "f",
+		Agents: map[string]config.AgentConfig{
+			"opencode": {Endpoints: []config.Endpoint{{
+				Protocol: "openai", URL: "http://halo:8080/v1", AddHost: "192.168.1.50",
+			}}},
+		},
+	}
+	spec, err := Build(cfg, m, newProfile(), t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.Env["OPENAI_BASE_URL"] != "http://halo:8080/v1" {
+		t.Errorf("OPENAI_BASE_URL: %v", spec.Env)
+	}
+	if !contains(spec.EnvPassthrough, "OPENAI_API_KEY") {
+		t.Errorf("OPENAI_API_KEY should be in passthrough: %v", spec.EnvPassthrough)
+	}
+	if spec.AddHosts["halo"] != "192.168.1.50" {
+		t.Errorf("add_host should parse URL hostname: %v", spec.AddHosts)
+	}
+}
+
+func TestBuildAnthropicEndpointDefaultURLOmitsBaseURL(t *testing.T) {
+	m := newManifest(t, t.TempDir())
+	m.Name = "claude"
+	cfg := config.Config{
+		ImageRegistry: "x", Toolchain: "f",
+		Agents: map[string]config.AgentConfig{
+			"claude": {Endpoints: []config.Endpoint{{Protocol: "anthropic"}}}, // no URL
+		},
+	}
+	spec, err := Build(cfg, m, newProfile(), t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := spec.Env["ANTHROPIC_BASE_URL"]; ok {
+		t.Errorf("ANTHROPIC_BASE_URL must NOT be set for default anthropic cloud: %v", spec.Env)
+	}
+	if !contains(spec.EnvPassthrough, "ANTHROPIC_API_KEY") {
+		t.Errorf("ANTHROPIC_API_KEY should be in passthrough: %v", spec.EnvPassthrough)
+	}
+}
+
+func TestBuildAnthropicEndpointCustomURLSetsBaseURL(t *testing.T) {
+	m := newManifest(t, t.TempDir())
+	m.Name = "claude"
+	cfg := config.Config{
+		ImageRegistry: "x", Toolchain: "f",
+		Agents: map[string]config.AgentConfig{
+			"claude": {Endpoints: []config.Endpoint{{
+				Protocol: "anthropic", URL: "https://proxy.example.com",
+			}}},
+		},
+	}
+	spec, err := Build(cfg, m, newProfile(), t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.Env["ANTHROPIC_BASE_URL"] != "https://proxy.example.com" {
+		t.Errorf("ANTHROPIC_BASE_URL: %v", spec.Env)
+	}
+}
+
+func TestBuildEndpointMultipleProtocols(t *testing.T) {
+	m := newManifest(t, t.TempDir())
+	m.Name = "opencode"
+	cfg := config.Config{
+		ImageRegistry: "x", Toolchain: "f",
+		Agents: map[string]config.AgentConfig{
+			"opencode": {Endpoints: []config.Endpoint{
+				{Protocol: "openai", URL: "http://halo:8080/v1"},
+				{Protocol: "anthropic", URL: "https://proxy.example.com"},
+			}},
+		},
+	}
+	spec, err := Build(cfg, m, newProfile(), t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.Env["OPENAI_BASE_URL"] == "" || spec.Env["ANTHROPIC_BASE_URL"] == "" {
+		t.Errorf("both base URLs must be set: %v", spec.Env)
+	}
+}
+
+func TestBuildEndpointUnknownProtocolRejected(t *testing.T) {
+	m := newManifest(t, t.TempDir())
+	m.Name = "opencode"
+	cfg := config.Config{
+		ImageRegistry: "x", Toolchain: "f",
+		Agents: map[string]config.AgentConfig{
+			"opencode": {Endpoints: []config.Endpoint{{Protocol: "bedrock", URL: "x"}}},
+		},
+	}
+	_, err := Build(cfg, m, newProfile(), t.TempDir(), nil)
+	if err == nil {
+		t.Fatal("unknown protocol must error")
+	}
+}
+
+func TestBuildEndpointDuplicateProtocolRejected(t *testing.T) {
+	m := newManifest(t, t.TempDir())
+	m.Name = "opencode"
+	cfg := config.Config{
+		ImageRegistry: "x", Toolchain: "f",
+		Agents: map[string]config.AgentConfig{
+			"opencode": {Endpoints: []config.Endpoint{
+				{Protocol: "openai", URL: "http://halo:8080/v1"},
+				{Protocol: "openai", URL: "http://other:8080/v1"},
+			}},
+		},
+	}
+	_, err := Build(cfg, m, newProfile(), t.TempDir(), nil)
+	if err == nil {
+		t.Fatal("duplicate protocol within an agent must error")
+	}
+}
+
+func TestBuildOpenAIEndpointRequiresURL(t *testing.T) {
+	m := newManifest(t, t.TempDir())
+	m.Name = "opencode"
+	cfg := config.Config{
+		ImageRegistry: "x", Toolchain: "f",
+		Agents: map[string]config.AgentConfig{
+			"opencode": {Endpoints: []config.Endpoint{{Protocol: "openai"}}},
+		},
+	}
+	_, err := Build(cfg, m, newProfile(), t.TempDir(), nil)
+	if err == nil {
+		t.Fatal("openai protocol requires url")
+	}
+}
+
+func TestBuildEndpointAddHostReservedRejected(t *testing.T) {
+	m := newManifest(t, t.TempDir())
+	m.Name = "opencode"
+	cfg := config.Config{
+		ImageRegistry: "x", Toolchain: "f",
+		Agents: map[string]config.AgentConfig{
+			"opencode": {Endpoints: []config.Endpoint{{
+				Protocol: "openai", URL: "http://host.docker.internal:8080/v1", AddHost: "1.2.3.4",
+			}}},
+		},
+	}
+	_, err := Build(cfg, m, newProfile(), t.TempDir(), nil)
+	if err == nil {
+		t.Fatal("add_host must not override host.docker.internal")
+	}
+}
+
+func TestBuildEndpointsScopedToCurrentAgent(t *testing.T) {
+	// Endpoints under a different agent name should NOT affect this run.
+	m := newManifest(t, t.TempDir())
+	m.Name = "opencode"
+	cfg := config.Config{
+		ImageRegistry: "x", Toolchain: "f",
+		Agents: map[string]config.AgentConfig{
+			"pi": {Endpoints: []config.Endpoint{{Protocol: "openai", URL: "http://halo:8080/v1"}}},
+		},
+	}
+	spec, err := Build(cfg, m, newProfile(), t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := spec.Env["OPENAI_BASE_URL"]; ok {
+		t.Errorf("only the active agent's endpoints should apply: %v", spec.Env)
+	}
+}
+
 func TestBuildExtraHostsPropagated(t *testing.T) {
 	cfg := config.Config{
 		ImageRegistry: "x", Toolchain: "f",
