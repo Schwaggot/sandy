@@ -71,6 +71,20 @@ func Build(cfg config.Config, m agent.Manifest, p profile.Profile, projectRoot s
 		})
 	}
 
+	// Extra hosts from user/project config (rendered as --add-host).
+	for name, ip := range cfg.ExtraHosts {
+		if name == "host.docker.internal" {
+			return spec, fmt.Errorf("extra_hosts: %q is reserved by sandy and cannot be overridden", name)
+		}
+		if strings.TrimSpace(name) == "" {
+			return spec, fmt.Errorf("extra_hosts: hostname is required")
+		}
+		if strings.TrimSpace(ip) == "" {
+			return spec, fmt.Errorf("extra_hosts: ip for %q is required", name)
+		}
+		spec.AddHosts[name] = ip
+	}
+
 	// Extra mounts from user/project config (applied after agent config mounts
 	// so they can layer over the home volume or workspace).
 	for _, em := range cfg.ExtraMounts {

@@ -357,6 +357,48 @@ func TestBuildExtraMountRelativeTargetRejected(t *testing.T) {
 	}
 }
 
+func TestBuildExtraHostsPropagated(t *testing.T) {
+	cfg := config.Config{
+		ImageRegistry: "x", Toolchain: "f",
+		ExtraHosts: map[string]string{"halo": "192.168.1.50", "registry.lan": "10.0.0.7"},
+	}
+	spec, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.AddHosts["halo"] != "192.168.1.50" {
+		t.Errorf("halo entry missing/wrong: %v", spec.AddHosts)
+	}
+	if spec.AddHosts["registry.lan"] != "10.0.0.7" {
+		t.Errorf("second host missing: %v", spec.AddHosts)
+	}
+	if spec.AddHosts["host.docker.internal"] != "host-gateway" {
+		t.Errorf("built-in host.docker.internal must remain: %v", spec.AddHosts)
+	}
+}
+
+func TestBuildExtraHostsReservedNameRejected(t *testing.T) {
+	cfg := config.Config{
+		ImageRegistry: "x", Toolchain: "f",
+		ExtraHosts: map[string]string{"host.docker.internal": "10.0.0.1"},
+	}
+	_, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil)
+	if err == nil {
+		t.Fatal("overriding the reserved host.docker.internal must error")
+	}
+}
+
+func TestBuildExtraHostsRequiresValues(t *testing.T) {
+	cfg := config.Config{
+		ImageRegistry: "x", Toolchain: "f",
+		ExtraHosts: map[string]string{"halo": ""},
+	}
+	_, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil)
+	if err == nil {
+		t.Fatal("empty IP must be rejected")
+	}
+}
+
 func TestBuildReadOnlyWorkspace(t *testing.T) {
 	configDir := t.TempDir()
 	m := newManifest(t, configDir)

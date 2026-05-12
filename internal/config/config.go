@@ -23,6 +23,10 @@ type Config struct {
 	AllowlistDomains []string     `yaml:"allowlist_domains"`
 	Runtime          string       `yaml:"runtime"` // docker | podman
 	ExtraMounts      []ExtraMount `yaml:"extra_mounts"`
+	// ExtraHosts maps a container-visible hostname to a host-reachable IP,
+	// rendered as docker --add-host. Project entries override user entries
+	// on key collision. Reserved: "host.docker.internal" (sandy sets it).
+	ExtraHosts map[string]string `yaml:"extra_hosts"`
 }
 
 // ExtraMount is an additional host path bound into the sandbox, declared in
@@ -100,6 +104,15 @@ func merge(dst *Config, src Config) {
 	// Allowlist and extra mounts append across layers.
 	dst.AllowlistDomains = append(dst.AllowlistDomains, src.AllowlistDomains...)
 	dst.ExtraMounts = append(dst.ExtraMounts, src.ExtraMounts...)
+	// Extra hosts merge by key (later layer wins).
+	if len(src.ExtraHosts) > 0 {
+		if dst.ExtraHosts == nil {
+			dst.ExtraHosts = map[string]string{}
+		}
+		for k, v := range src.ExtraHosts {
+			dst.ExtraHosts[k] = v
+		}
+	}
 }
 
 // Write serializes a project config to <projectRoot>/.sandy/config.yaml.

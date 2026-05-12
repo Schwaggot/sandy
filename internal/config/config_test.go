@@ -107,6 +107,43 @@ func TestLoadExtraMountsAppend(t *testing.T) {
 	}
 }
 
+func TestLoadExtraHostsMergeProjectWins(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	userCfg := filepath.Join(home, ".sandy", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(userCfg), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(userCfg, []byte(
+		"extra_hosts:\n  halo: 10.0.0.5\n  shared: 10.0.0.9\n",
+	), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	proj := t.TempDir()
+	projCfg := filepath.Join(proj, ".sandy", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(projCfg), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(projCfg, []byte(
+		"extra_hosts:\n  halo: 192.168.1.50\n",
+	), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ExtraHosts["halo"] != "192.168.1.50" {
+		t.Errorf("project should override user for key collisions: %v", cfg.ExtraHosts)
+	}
+	if cfg.ExtraHosts["shared"] != "10.0.0.9" {
+		t.Errorf("user-only host should remain: %v", cfg.ExtraHosts)
+	}
+}
+
 func TestWriteRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	in := Config{Profile: "open", Toolchain: "cpp", ImageRegistry: "ghcr.io/test", Runtime: "docker"}

@@ -169,7 +169,16 @@ Resolution rules:
 ### Host services
 
 - Sandy adds `--add-host=host.docker.internal:host-gateway` so host-local services (e.g. LM Studio) are reachable at `host.docker.internal:<port>`.
-- LAN endpoints are reached normally; configured in the user-level allowlist (for v2 restricted profile).
+- LAN endpoints are reached normally when the profile network is `open`. Bare/mDNS hostnames (e.g. `halo`, `printer.local`) typically do not resolve inside containers; add them via `extra_hosts` in `~/.sandy/config.yaml` or `<project>/.sandy/config.yaml`:
+
+  ```yaml
+  extra_hosts:
+    halo: 192.168.1.50
+    registry.lan: 10.0.0.7
+  ```
+
+  Project entries override user entries on key collision. The hostname `host.docker.internal` is reserved.
+- The `allowlist_domains` field is reserved for the v2 `restricted` profile (egress proxy + SNI/domain allowlist) and is not enforced in v1.
 
 ## Network
 
