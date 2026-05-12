@@ -3,7 +3,10 @@ package sandbox
 import (
 	"fmt"
 	"os"
+	"path"
+	"path/filepath"
 	goruntime "runtime"
+	"strings"
 
 	"github.com/schwaggot/sandy/internal/agent"
 	"github.com/schwaggot/sandy/internal/config"
@@ -65,6 +68,19 @@ func Build(cfg config.Config, m agent.Manifest, p profile.Profile, projectRoot s
 		})
 	}
 
+	// Extra mounts from user/project config (applied after agent config mounts
+	// so they can layer over the home volume or workspace).
+	for _, em := range cfg.ExtraMounts {
+		m, ok, err := resolveExtraMount(em, projectRoot)
+		if err != nil {
+			return spec, err
+		}
+		if !ok {
+			continue
+		}
+		spec.Mounts = append(spec.Mounts, m)
+	}
+
 	// Env passthrough: docker reads the value from the caller's environment.
 	// We never copy the value into the command line, so secrets stay out of
 	// dry-run output and process listings.
@@ -111,4 +127,68 @@ func Build(cfg config.Config, m agent.Manifest, p profile.Profile, projectRoot s
 	}
 
 	return spec, nil
+}
+
+// resolveExtraMount validates and resolves a user-declared extra mount.
+// Returns (mount, true, nil) on success, (_, false, nil) when an optional
+// source is missing, and (_, _, err) on a fatal misconfiguration.
+func resolveExtraMount(em config.ExtraMount, projectRoot string) (runtime.Mount, bool, error) {
+	if strings.TrimSpace(em.Source) == "" {
+		return runtime.Mount{}, false, fmt.Errorf("extra_mounts: source is required")
+	}
+	// Container paths are POSIX regardless of host OS. Use path/, not filepath/,
+	// so this works when sandy runs on Windows.
+	if !path.IsAbs(em.Target) {
+		return runtime.Mount{}, false, fmt.Errorf("extra_mounts: target %q must be an absolute container path", em.Target)
+	}
+	clean := path.Clean(em.Target)
+	if clean == containerWorkspace || clean == containerHome {
+		return runtime.Mount{}, false, fmt.Errorf("extra_mounts: target %q collides with sandy-managed mount", em.Target)
+	}
+	switch em.Mode {
+	case "", "ro", "rw":
+	default:
+		return runtime.Mount{}, false, fmt.Errorf("extra_mounts: mode %q must be \"ro\" or \"rw\"", em.Mode)
+	}
+
+	host, err := resolveSource(em.Source, projectRoot)
+	if err != nil {
+		return runtime.Mount{}, false, err
+	}
+	if _, err := os.Stat(host); err != nil {
+		if em.Optional {
+			return runtime.Mount{}, false, nil
+		}
+		return runtime.Mount{}, false, fmt.Errorf("extra_mounts: required source path missing: %s", host)
+	}
+
+	return runtime.Mount{
+		Source:   host,
+		Target:   clean,
+		ReadOnly: em.Mode != "rw",
+	}, true, nil
+}
+
+// resolveSource expands a user-supplied host path: ~ (or ~/...) to $HOME,
+// relative paths against projectRoot. Returns an absolute, cleaned path.
+// The ~user form is not supported.
+func resolveSource(src, projectRoot string) (string, error) {
+	if strings.HasPrefix(src, "~") {
+		if src != "~" && !strings.HasPrefix(src, "~/") && !strings.HasPrefix(src, `~\`) {
+			return "", fmt.Errorf("extra_mounts: ~user form is not supported in %q; use ~ or ~/...", src)
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("extra_mounts: cannot expand %q: %w", src, err)
+		}
+		rest := strings.TrimLeft(strings.TrimPrefix(src, "~"), `/\`)
+		src = filepath.Join(home, rest)
+	}
+	if !filepath.IsAbs(src) {
+		if projectRoot == "" {
+			return "", fmt.Errorf("extra_mounts: relative source %q requires a project root", src)
+		}
+		src = filepath.Join(projectRoot, src)
+	}
+	return filepath.Clean(src), nil
 }

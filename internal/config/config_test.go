@@ -64,6 +64,49 @@ func TestLoadLayering(t *testing.T) {
 	}
 }
 
+func TestLoadExtraMountsAppend(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	userCfg := filepath.Join(home, ".sandy", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(userCfg), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(userCfg, []byte(
+		"extra_mounts:\n  - source: ~/shared\n    target: /workspace/shared\n",
+	), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	proj := t.TempDir()
+	projCfg := filepath.Join(proj, ".sandy", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(projCfg), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(projCfg, []byte(
+		"extra_mounts:\n  - source: ../sibling\n    target: /workspace/sibling\n    mode: rw\n  - source: /etc/ssl/certs\n    target: /etc/ssl/certs\n    optional: true\n",
+	), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.ExtraMounts) != 3 {
+		t.Fatalf("want 3 mounts (1 user + 2 project), got %d: %+v", len(cfg.ExtraMounts), cfg.ExtraMounts)
+	}
+	if cfg.ExtraMounts[0].Source != "~/shared" || cfg.ExtraMounts[0].Target != "/workspace/shared" {
+		t.Errorf("user mount: %+v", cfg.ExtraMounts[0])
+	}
+	if cfg.ExtraMounts[1].Mode != "rw" {
+		t.Errorf("project mount mode: %+v", cfg.ExtraMounts[1])
+	}
+	if !cfg.ExtraMounts[2].Optional {
+		t.Errorf("optional flag did not parse: %+v", cfg.ExtraMounts[2])
+	}
+}
+
 func TestWriteRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	in := Config{Profile: "open", Toolchain: "cpp", ImageRegistry: "ghcr.io/test", Runtime: "docker"}

@@ -10,6 +10,7 @@ import (
 	"github.com/schwaggot/sandy/internal/agent"
 	"github.com/schwaggot/sandy/internal/config"
 	"github.com/schwaggot/sandy/internal/profile"
+	"github.com/schwaggot/sandy/internal/runtime"
 )
 
 func newManifest(t *testing.T, configDir string) agent.Manifest {
@@ -213,6 +214,180 @@ func TestBuildUnknownProfileErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("unknown network profile should error")
 	}
+}
+
+func TestBuildExtraMountAbsoluteReadOnlyByDefault(t *testing.T) {
+	src := t.TempDir()
+	cfg := config.Config{
+		ImageRegistry: "x", Toolchain: "f",
+		ExtraMounts: []config.ExtraMount{{Source: src, Target: "/workspace/shared"}},
+	}
+	spec, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := findMount(spec.Mounts, "/workspace/shared")
+	if m == nil {
+		t.Fatalf("extra mount not present: %+v", spec.Mounts)
+	}
+	if m.Source != src {
+		t.Errorf("source: want %q got %q", src, m.Source)
+	}
+	if !m.ReadOnly {
+		t.Errorf("default mode must be read-only")
+	}
+	if m.Volume {
+		t.Errorf("extra mount must be a bind mount, not a volume")
+	}
+}
+
+func TestBuildExtraMountRWMode(t *testing.T) {
+	src := t.TempDir()
+	cfg := config.Config{
+		ImageRegistry: "x", Toolchain: "f",
+		ExtraMounts: []config.ExtraMount{{Source: src, Target: "/workspace/shared", Mode: "rw"}},
+	}
+	spec, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := findMount(spec.Mounts, "/workspace/shared")
+	if m == nil || m.ReadOnly {
+		t.Fatalf("expected RW mount, got %+v", m)
+	}
+}
+
+func TestBuildExtraMountRelativeToProjectRoot(t *testing.T) {
+	parent := t.TempDir()
+	project := filepath.Join(parent, "proj")
+	sibling := filepath.Join(parent, "sibling")
+	for _, d := range []string{project, sibling} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg := config.Config{
+		ImageRegistry: "x", Toolchain: "f",
+		ExtraMounts: []config.ExtraMount{{Source: "../sibling", Target: "/workspace/sibling"}},
+	}
+	spec, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), project, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := findMount(spec.Mounts, "/workspace/sibling")
+	if m == nil {
+		t.Fatalf("relative mount missing: %+v", spec.Mounts)
+	}
+	if m.Source != sibling {
+		t.Errorf("source: want %q got %q", sibling, m.Source)
+	}
+}
+
+func TestBuildExtraMountTildeExpansion(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	sub := filepath.Join(home, "shared")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{
+		ImageRegistry: "x", Toolchain: "f",
+		ExtraMounts: []config.ExtraMount{{Source: "~/shared", Target: "/workspace/shared"}},
+	}
+	spec, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := findMount(spec.Mounts, "/workspace/shared")
+	if m == nil || m.Source != sub {
+		t.Fatalf("tilde expansion failed: %+v", m)
+	}
+}
+
+func TestBuildExtraMountMissingRequiredErrors(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "absent")
+	cfg := config.Config{
+		ImageRegistry: "x", Toolchain: "f",
+		ExtraMounts: []config.ExtraMount{{Source: missing, Target: "/workspace/x"}},
+	}
+	_, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil)
+	if err == nil {
+		t.Fatal("expected error for missing required extra mount source")
+	}
+}
+
+func TestBuildExtraMountMissingOptionalSkipped(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "absent")
+	cfg := config.Config{
+		ImageRegistry: "x", Toolchain: "f",
+		ExtraMounts: []config.ExtraMount{{Source: missing, Target: "/workspace/x", Optional: true}},
+	}
+	spec, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("optional missing source should not error: %v", err)
+	}
+	if findMount(spec.Mounts, "/workspace/x") != nil {
+		t.Errorf("optional missing source should be skipped")
+	}
+}
+
+func TestBuildExtraMountTargetCollisionRejected(t *testing.T) {
+	src := t.TempDir()
+	for _, target := range []string{"/workspace", "/home/sandy"} {
+		cfg := config.Config{
+			ImageRegistry: "x", Toolchain: "f",
+			ExtraMounts: []config.ExtraMount{{Source: src, Target: target}},
+		}
+		_, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil)
+		if err == nil {
+			t.Errorf("target %q should be rejected", target)
+		}
+	}
+}
+
+func TestBuildExtraMountRelativeTargetRejected(t *testing.T) {
+	src := t.TempDir()
+	cfg := config.Config{
+		ImageRegistry: "x", Toolchain: "f",
+		ExtraMounts: []config.ExtraMount{{Source: src, Target: "shared"}},
+	}
+	_, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil)
+	if err == nil {
+		t.Fatal("relative target must be rejected")
+	}
+}
+
+func TestBuildExtraMountTildeUserFormRejected(t *testing.T) {
+	src := t.TempDir()
+	cfg := config.Config{
+		ImageRegistry: "x", Toolchain: "f",
+		ExtraMounts: []config.ExtraMount{{Source: "~bob/shared", Target: "/workspace/x"}},
+	}
+	_, err := Build(cfg, newManifest(t, src), newProfile(), t.TempDir(), nil)
+	if err == nil {
+		t.Fatal("~user form must be rejected, not silently treated as current user's home")
+	}
+}
+
+func TestBuildExtraMountInvalidMode(t *testing.T) {
+	src := t.TempDir()
+	cfg := config.Config{
+		ImageRegistry: "x", Toolchain: "f",
+		ExtraMounts: []config.ExtraMount{{Source: src, Target: "/workspace/x", Mode: "weird"}},
+	}
+	_, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil)
+	if err == nil {
+		t.Fatal("unknown mode must be rejected")
+	}
+}
+
+func findMount(ms []runtime.Mount, target string) *runtime.Mount {
+	for i := range ms {
+		if ms[i].Target == target {
+			return &ms[i]
+		}
+	}
+	return nil
 }
 
 func contains(ss []string, want string) bool {

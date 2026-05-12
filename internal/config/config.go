@@ -17,11 +17,25 @@ const (
 
 // Config is the merged effective configuration after layering.
 type Config struct {
-	Profile          string   `yaml:"profile"`
-	Toolchain        string   `yaml:"toolchain"`
-	ImageRegistry    string   `yaml:"image_registry"`
-	AllowlistDomains []string `yaml:"allowlist_domains"`
-	Runtime          string   `yaml:"runtime"` // docker | podman
+	Profile          string       `yaml:"profile"`
+	Toolchain        string       `yaml:"toolchain"`
+	ImageRegistry    string       `yaml:"image_registry"`
+	AllowlistDomains []string     `yaml:"allowlist_domains"`
+	Runtime          string       `yaml:"runtime"` // docker | podman
+	ExtraMounts      []ExtraMount `yaml:"extra_mounts"`
+}
+
+// ExtraMount is an additional host path bound into the sandbox, declared in
+// user- or project-level config. Defaults to read-only.
+//
+// Source may be absolute, ~-prefixed (expanded against the caller's home),
+// or relative to the project root. Target must be an absolute container path
+// and must not collide with sandy-managed mounts (/workspace, /home/sandy).
+type ExtraMount struct {
+	Source   string `yaml:"source"`
+	Target   string `yaml:"target"`
+	Mode     string `yaml:"mode"`     // "ro" (default) | "rw"
+	Optional bool   `yaml:"optional"` // skip silently if source is missing
 }
 
 func defaults() Config {
@@ -83,8 +97,9 @@ func merge(dst *Config, src Config) {
 	if src.Runtime != "" {
 		dst.Runtime = src.Runtime
 	}
-	// Allowlist appends.
+	// Allowlist and extra mounts append across layers.
 	dst.AllowlistDomains = append(dst.AllowlistDomains, src.AllowlistDomains...)
+	dst.ExtraMounts = append(dst.ExtraMounts, src.ExtraMounts...)
 }
 
 // Write serializes a project config to <projectRoot>/.sandy/config.yaml.

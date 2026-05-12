@@ -67,7 +67,7 @@ Committed; team artifact.
 
 Lowest to highest: built-in defaults < `~/.sandy/config.yaml` < `.sandy/config.yaml` < CLI flags.
 
-Maps deep-merge. Lists are replaced, except `allowlist_domains` which appends.
+Maps deep-merge. Lists are replaced, except `allowlist_domains` and `extra_mounts` which append (user-level entries come first, project-level entries are appended).
 
 ## Agent manifests
 
@@ -133,7 +133,28 @@ Per-language toolchain images (python/cpp/node only) are not currently published
 
 - CWD bind-mounted read/write at `/workspace`; container WORKDIR is `/workspace`.
 - Agent config paths from the manifest bind-mounted read/write (agents like pi/claude/opencode need to write sessions and lock files into their config dir).
+- Additional host paths can be bound via the `extra_mounts` config field (see below); default is read-only.
 - No `.gitconfig`, no SSH agent forwarding. Commits/pushes happen on the host. `git` is installed in the image; `.git` works because it lives inside the CWD.
+
+#### `extra_mounts`
+
+Declared in `~/.sandy/config.yaml` or `<project>/.sandy/config.yaml` to bind additional host paths into the sandbox. Entries from both layers are concatenated (user first, project second).
+
+```yaml
+extra_mounts:
+  - source: ../shared-libs        # absolute, ~-prefixed, or relative to the project root
+    target: /workspace/shared     # absolute container path; must not be /workspace or /home/sandy
+    mode: ro                      # ro (default) | rw
+    optional: false               # if true, skip silently when source is missing
+```
+
+Resolution rules:
+
+- `~` expands to the caller's home directory.
+- Relative `source` paths resolve against the project root (the directory `sandy` was invoked from).
+- A missing `source` is a fatal error unless `optional: true`.
+- `target` must be an absolute path and must not collide with sandy-managed mounts (`/workspace`, `/home/sandy`); deeper paths like `/workspace/shared` or `/home/sandy/extra` are fine.
+- `mode: ro` is the default; only declare `rw` when the agent needs to write to the path.
 
 ### UID/GID
 
