@@ -261,7 +261,7 @@ func resolveExtraMount(em config.ExtraMount, projectRoot string) (runtime.Mount,
 func resolveSource(src, projectRoot string) (string, error) {
 	if strings.HasPrefix(src, "~") {
 		if src != "~" && !strings.HasPrefix(src, "~/") && !strings.HasPrefix(src, `~\`) {
-			return "", fmt.Errorf("extra_mounts: ~user form is not supported in %q; use ~ or ~/...", src)
+			return "", fmt.Errorf("extra_mounts: ~user form is not supported in %q (use ~ or ~/path)", src)
 		}
 		home, err := os.UserHomeDir()
 		if err != nil {
