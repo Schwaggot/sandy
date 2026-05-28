@@ -6,7 +6,16 @@ on:
     paths:
       - "images/**"
       - ".github/workflows/images.yml"
+  schedule:
+    # Daily at 07:00 UTC. precheck skips agents whose npm latest matches
+    # the version label on the already-published image.
+    - cron: "0 7 * * *"
   workflow_dispatch:
+    inputs:
+      force_all:
+        description: "Rebuild base + toolchain + all agents (ignore version check)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -19,7 +28,78 @@ env:
   OWNER: schwaggot
 
 jobs:
+  precheck:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.compute.outputs.matrix }}
+      need_agents: ${{ steps.compute.outputs.need_agents }}
+      rebuild_base: ${{ steps.compute.outputs.rebuild_base }}
+    steps:
+      - uses: imjasonh/setup-crane@v0.4
+      # crane reads ~/.docker/config.json for auth; login-action writes it.
+      # Needed in case sandy-*-fullstack packages are ever flipped to private.
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: compute
+        env:
+          EVENT: ${{ github.event_name }}
+          FORCE_ALL: ${{ inputs.force_all }}
+        run: |
+          set -euo pipefail
+
+          # push and force_all dispatch always rebuild everything; schedule
+          # only refreshes agents whose npm version drifted from the label.
+          if [ "$EVENT" = "push" ] || [ "$FORCE_ALL" = "true" ]; then
+            rebuild_base=true
+          else
+            rebuild_base=false
+          fi
+
+          # agent -> npm package name
+          declare -A PKG=(
+            [pi]="@earendil-works/pi-coding-agent"
+            [claude]="@anthropic-ai/claude-code"
+            [opencode]="opencode-ai"
+          )
+
+          include=()
+          for agent in pi claude opencode; do
+            latest=$(curl -fsSL "https://registry.npmjs.org/${PKG[$agent]}/latest" | jq -r '.version')
+
+            current=""
+            if [ "$rebuild_base" = "false" ]; then
+              # crane config returns the image config JSON; missing label or
+              # missing image both yield "" and trigger a rebuild.
+              current=$(crane config "${REGISTRY}/${OWNER}/sandy-${agent}-fullstack:latest" 2>/dev/null \
+                | jq -r '.config.Labels["agent.version"] // empty' || true)
+            fi
+
+            if [ "$rebuild_base" = "true" ] || [ "$latest" != "$current" ]; then
+              echo "rebuild $agent: '${current:-none}' -> $latest"
+              include+=("{\"agent\":\"$agent\",\"version\":\"$latest\"}")
+            else
+              echo "skip $agent: already at $latest"
+            fi
+          done
+
+          if [ ${#include[@]} -eq 0 ]; then
+            matrix='{"include":[]}'
+            need_agents=false
+          else
+            matrix=$(printf '%s\n' "${include[@]}" | jq -cs '{include: .}')
+            need_agents=true
+          fi
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "need_agents=$need_agents" >> "$GITHUB_OUTPUT"
+          echo "rebuild_base=$rebuild_base" >> "$GITHUB_OUTPUT"
+          echo "summary: rebuild_base=$rebuild_base need_agents=$need_agents matrix=$matrix"
+
   base:
+    needs: precheck
+    if: needs.precheck.outputs.rebuild_base == 'true'
     runs-on: ubuntu-latest
     outputs:
       base_tag: ${{ steps.tag.outputs.tag }}
@@ -52,7 +132,8 @@ jobs:
           format: table
 
   toolchain:
-    needs: base
+    needs: [precheck, base]
+    if: needs.precheck.outputs.rebuild_base == 'true'
     runs-on: ubuntu-latest
     outputs:
       toolchain_tag: ${{ steps.tag.outputs.tag }}
@@ -87,11 +168,15 @@ jobs:
           format: table
 
   agents:
-    needs: toolchain
+    needs: [precheck, toolchain]
+    # Run when agents need rebuilding AND toolchain either succeeded
+    # (rebuild path) or was skipped (scheduled agent-only refresh).
+    if: |
+      needs.precheck.outputs.need_agents == 'true' &&
+      (needs.toolchain.result == 'success' || needs.toolchain.result == 'skipped')
     runs-on: ubuntu-latest
     strategy:
-      matrix:
-        agent: [pi, opencode, claude]
+      matrix: ${{ fromJSON(needs.precheck.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-qemu-action@v4
@@ -107,7 +192,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           build-args: |
-            BASE_IMAGE=${{ needs.toolchain.outputs.toolchain_tag }}
+            BASE_IMAGE=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-toolchain-fullstack:latest
+            AGENT_VERSION=${{ matrix.version }}
           tags: ${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-${{ matrix.agent }}-fullstack:latest
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-${{ matrix.agent }}-fullstack:buildcache
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-${{ matrix.agent }}-fullstack:buildcache,mode=max

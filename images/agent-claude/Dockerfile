@@ -5,7 +5,10 @@ USER root
 
 # Claude Code CLI. Distributed via npm.
 # Requires node; present in node/fullstack toolchains.
-RUN npm install -g @anthropic-ai/claude-code
+ARG AGENT_VERSION=latest
+RUN npm install -g "@anthropic-ai/claude-code@${AGENT_VERSION}"
+
+LABEL agent.version="${AGENT_VERSION}"
 
 USER sandy
 

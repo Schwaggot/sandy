@@ -5,7 +5,10 @@ USER root
 
 # OpenCode (sst/opencode). Distributed as a node CLI.
 # Note: requires node, present in node/fullstack toolchains.
-RUN npm install -g opencode-ai
+ARG AGENT_VERSION=latest
+RUN npm install -g "opencode-ai@${AGENT_VERSION}"
+
+LABEL agent.version="${AGENT_VERSION}"
 
 USER sandy
 
