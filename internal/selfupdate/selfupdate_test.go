@@ -65,7 +65,7 @@ func newTestUpdater(t *testing.T, version string, assets map[string][]byte) *Upd
 	t.Helper()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repos/test/sandy/releases/latest", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, `{"tag_name":"v%s"}`, version)
+		_, _ = fmt.Fprintf(w, `{"tag_name":"v%s"}`, version)
 	})
 	mux.HandleFunc("/test/sandy/releases/download/", func(w http.ResponseWriter, r *http.Request) {
 		name := filepath.Base(r.URL.Path)
