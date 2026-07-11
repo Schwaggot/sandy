@@ -1,0 +1,5 @@
+# Go stdlib os.Root symlink traversal in the prebuilt tsc binary that
+# TypeScript bundles (@typescript/typescript-linux-*), compiled upstream
+# with Go 1.26.4. Not fixable from our Dockerfiles; remove this entry
+# once TypeScript publishes binaries built with Go 1.26.5 or later.
+CVE-2026-39822

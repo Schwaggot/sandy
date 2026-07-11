@@ -125,6 +125,7 @@ jobs:
       - name: trivy scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
+          trivyignores: .trivyignore
           image-ref: ${{ steps.tag.outputs.tag }}
           severity: HIGH,CRITICAL
           ignore-unfixed: true
@@ -161,6 +162,7 @@ jobs:
       - name: trivy scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
+          trivyignores: .trivyignore
           image-ref: ${{ steps.tag.outputs.tag }}
           severity: HIGH,CRITICAL
           ignore-unfixed: true
@@ -205,6 +207,7 @@ jobs:
       - name: trivy scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
+          trivyignores: .trivyignore
           image-ref: ${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-${{ matrix.agent }}-fullstack:latest
           severity: HIGH,CRITICAL
           ignore-unfixed: true
