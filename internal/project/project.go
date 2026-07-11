@@ -9,9 +9,26 @@ import (
 )
 
 // Root walks up from cwd until it finds .sandy/ or .git/, otherwise returns cwd.
+// The walk stops before reaching the user's home directory: ~/.sandy is sandy's
+// global config dir and a dotfiles repo may put .git at $HOME, so neither may
+// mark $HOME as a project root (which would mount the whole home directory).
 func Root(cwd string) string {
-	dir := cwd
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = ""
+	}
+	return rootFrom(cwd, home)
+}
+
+func rootFrom(cwd, home string) string {
+	dir := filepath.Clean(cwd)
+	if home != "" {
+		home = filepath.Clean(home)
+	}
 	for {
+		if dir == home {
+			return cwd
+		}
 		if _, err := os.Stat(filepath.Join(dir, ".sandy")); err == nil {
 			return dir
 		}

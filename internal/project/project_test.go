@@ -58,6 +58,72 @@ func TestRootFallsBackToCwd(t *testing.T) {
 	}
 }
 
+func TestRootIgnoresMarkersAtHome(t *testing.T) {
+	// ~/.sandy is sandy's global config dir and $HOME may hold a dotfiles
+	// .git; neither may turn the home directory into a project root.
+	for _, marker := range []string{".sandy", ".git"} {
+		t.Run(marker, func(t *testing.T) {
+			home := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(home, marker), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			sub := filepath.Join(home, "projects", "foo")
+			if err := os.MkdirAll(sub, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if got := rootFrom(sub, home); got != sub {
+				t.Errorf("rootFrom: want cwd %q, got %q", sub, got)
+			}
+		})
+	}
+}
+
+func TestRootStopsWalkingAtHome(t *testing.T) {
+	// A marker above $HOME must not be reached either.
+	base := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(base, ".sandy"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	home := filepath.Join(base, "home")
+	sub := filepath.Join(home, "docs")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := rootFrom(sub, home); got != sub {
+		t.Errorf("rootFrom: want cwd %q, got %q", sub, got)
+	}
+}
+
+func TestRootFindsProjectUnderHome(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".sandy"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	proj := filepath.Join(home, "projects", "foo")
+	if err := os.MkdirAll(filepath.Join(proj, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sub := filepath.Join(proj, "a", "b")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := rootFrom(sub, home); got != proj {
+		t.Errorf("rootFrom: want project root %q, got %q", proj, got)
+	}
+}
+
+func TestRootRunDirectlyInHome(t *testing.T) {
+	// Running in $HOME itself keeps cwd as root; the guard only blocks
+	// implicit escalation from subdirectories.
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".sandy"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := rootFrom(home, home); got != home {
+		t.Errorf("rootFrom: want %q, got %q", home, got)
+	}
+}
+
 func TestDetectToolchains(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, "pyproject.toml"), "")
@@ -75,10 +141,10 @@ func TestPickToolchain(t *testing.T) {
 		in   []string
 		want string
 	}{
-		"empty":  {nil, "fullstack"},
-		"one":    {[]string{"python"}, "python"},
-		"two":    {[]string{"python", "node"}, "fullstack"},
-		"three":  {[]string{"python", "cpp", "node"}, "fullstack"},
+		"empty": {nil, "fullstack"},
+		"one":   {[]string{"python"}, "python"},
+		"two":   {[]string{"python", "node"}, "fullstack"},
+		"three": {[]string{"python", "cpp", "node"}, "fullstack"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
