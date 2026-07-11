@@ -49,7 +49,7 @@ func New() *Updater {
 // development builds and when the binary is already current.
 func (u *Updater) Run(current string, out io.Writer) error {
 	if current == "dev" {
-		fmt.Fprintln(out, "skipping binary self-update: development build")
+		_, _ = fmt.Fprintln(out, "skipping binary self-update: development build")
 		return nil
 	}
 	latest, err := u.latestVersion()
@@ -57,7 +57,7 @@ func (u *Updater) Run(current string, out io.Writer) error {
 		return fmt.Errorf("checking latest release: %w", err)
 	}
 	if !newerThan(latest, current) {
-		fmt.Fprintf(out, "sandy binary up to date (%s, latest release %s)\n", current, latest)
+		_, _ = fmt.Fprintf(out, "sandy binary up to date (%s, latest release %s)\n", current, latest)
 		return nil
 	}
 
@@ -73,7 +73,7 @@ func (u *Updater) Run(current string, out io.Writer) error {
 		}
 	}
 
-	fmt.Fprintf(out, "updating sandy binary %s -> %s\n", current, latest)
+	_, _ = fmt.Fprintf(out, "updating sandy binary %s -> %s\n", current, latest)
 
 	asset := u.assetName(latest)
 	archive, err := u.fetch(u.downloadURL(latest, asset))
@@ -94,7 +94,7 @@ func (u *Updater) Run(current string, out io.Writer) error {
 	if err := replaceBinary(execPath, bin, u.OS); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "installed sandy %s to %s\n", latest, execPath)
+	_, _ = fmt.Fprintf(out, "installed sandy %s to %s\n", latest, execPath)
 	return nil
 }
 
@@ -104,7 +104,7 @@ func (u *Updater) latestVersion() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("GET %s: %s", url, resp.Status)
 	}
@@ -137,7 +137,7 @@ func (u *Updater) fetch(url string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("GET %s: %s", url, resp.Status)
 	}
@@ -218,7 +218,7 @@ func extractBinary(archive []byte, assetName, goos string) ([]byte, error) {
 				if err != nil {
 					return nil, err
 				}
-				defer rc.Close()
+				defer func() { _ = rc.Close() }()
 				return io.ReadAll(rc)
 			}
 		}
@@ -227,7 +227,7 @@ func extractBinary(archive []byte, assetName, goos string) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("reading %s: %w", assetName, err)
 		}
-		defer gz.Close()
+		defer func() { _ = gz.Close() }()
 		tr := tar.NewReader(gz)
 		for {
 			hdr, err := tr.Next()
@@ -256,13 +256,13 @@ func replaceBinary(path string, data []byte, goos string) error {
 		}
 		return err
 	}
-	defer os.Remove(tmp.Name())
+	defer func() { _ = os.Remove(tmp.Name()) }()
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return err
 	}
 	if err := tmp.Chmod(0o755); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return err
 	}
 	if err := tmp.Close(); err != nil {
@@ -271,14 +271,14 @@ func replaceBinary(path string, data []byte, goos string) error {
 	if goos == "windows" {
 		// Windows cannot rename over a running executable; move it aside.
 		old := path + ".old"
-		os.Remove(old)
+		_ = os.Remove(old)
 		if err := os.Rename(path, old); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 		if err := os.Rename(tmp.Name(), path); err != nil {
 			return err
 		}
-		os.Remove(old)
+		_ = os.Remove(old)
 		return nil
 	}
 	if err := os.Rename(tmp.Name(), path); err != nil {

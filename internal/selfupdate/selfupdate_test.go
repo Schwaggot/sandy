@@ -74,7 +74,7 @@ func newTestUpdater(t *testing.T, version string, assets map[string][]byte) *Upd
 			http.NotFound(w, r)
 			return
 		}
-		w.Write(data)
+		_, _ = w.Write(data)
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
