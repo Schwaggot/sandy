@@ -171,7 +171,12 @@ jobs:
     needs: [precheck, toolchain]
     # Run when agents need rebuilding AND toolchain either succeeded
     # (rebuild path) or was skipped (scheduled agent-only refresh).
+    # !cancelled() suppresses the implicit success() that GitHub prepends
+    # to conditions without a status-check function; success() is false
+    # when a needed job was skipped, which silently skipped this job on
+    # every scheduled agent-only run.
     if: |
+      !cancelled() &&
       needs.precheck.outputs.need_agents == 'true' &&
       (needs.toolchain.result == 'success' || needs.toolchain.result == 'skipped')
     runs-on: ubuntu-latest
