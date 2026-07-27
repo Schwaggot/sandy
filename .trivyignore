@@ -3,3 +3,17 @@
 # with Go 1.26.4. Not fixable from our Dockerfiles; remove this entry
 # once TypeScript publishes binaries built with Go 1.26.5 or later.
 CVE-2026-39822
+
+# Kernel CVEs matched against linux-libc-dev, the kernel headers that
+# build-essential pulls into the toolchain image. Headers only: the
+# container never runs the kernel they describe. The fixed version
+# (6.12.96-1) is in trixie-proposed-updates, so apt cannot reach it even
+# on a no-cache rebuild. Remove once 6.12.96-1 lands in trixie proper.
+CVE-2026-53399
+CVE-2026-64600
+
+# Denial of service in brace-expansion, vendored inside npm's own bundled
+# dependency tree. npm 12.0.1 (current latest) still ships 5.0.7, so the
+# toolchain's `npm install -g npm@latest` cannot pick up the 5.0.8 fix.
+# Remove once npm publishes a release bundling brace-expansion 5.0.8.
+CVE-2026-14257

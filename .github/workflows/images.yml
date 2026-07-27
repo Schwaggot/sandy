@@ -8,12 +8,19 @@ on:
       - ".github/workflows/images.yml"
   schedule:
     # Daily at 07:00 UTC. precheck skips agents whose npm latest matches
-    # the version label on the already-published image.
+    # the version label on the already-published image. On Sundays it also
+    # rebuilds base + toolchain with the layer cache bypassed, so OS and
+    # npm package updates actually land instead of being served from
+    # buildcache forever.
     - cron: "0 7 * * *"
   workflow_dispatch:
     inputs:
       force_all:
         description: "Rebuild base + toolchain + all agents (ignore version check)"
+        type: boolean
+        default: false
+      no_cache:
+        description: "Bypass the registry layer cache (picks up new apt/npm versions)"
         type: boolean
         default: false
 
@@ -34,6 +41,7 @@ jobs:
       matrix: ${{ steps.compute.outputs.matrix }}
       need_agents: ${{ steps.compute.outputs.need_agents }}
       rebuild_base: ${{ steps.compute.outputs.rebuild_base }}
+      no_cache: ${{ steps.compute.outputs.no_cache }}
     steps:
       - uses: imjasonh/setup-crane@v0.7
       # crane reads ~/.docker/config.json for auth; login-action writes it.
@@ -47,15 +55,38 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           FORCE_ALL: ${{ inputs.force_all }}
+          NO_CACHE: ${{ inputs.no_cache }}
         run: |
           set -euo pipefail
 
-          # push and force_all dispatch always rebuild everything; schedule
-          # only refreshes agents whose npm version drifted from the label.
+          # push and force_all dispatch always rebuild everything; a plain
+          # schedule only refreshes agents whose npm version drifted from
+          # the label.
           if [ "$EVENT" = "push" ] || [ "$FORCE_ALL" = "true" ]; then
             rebuild_base=true
           else
             rebuild_base=false
+          fi
+
+          # Weekly full refresh. A cached rebuild replays the same
+          # `apt-get install` and `npm install -g` layers, so package
+          # updates and their CVE fixes never reach the image unless a
+          # Dockerfile changes. Once a week, rebuild base + toolchain from
+          # scratch so those updates land.
+          no_cache=false
+          if [ "$EVENT" = "schedule" ] && [ "$(date -u +%u)" = "7" ]; then
+            echo "sunday: full no-cache rebuild of base + toolchain"
+            no_cache=true
+          elif [ "$NO_CACHE" = "true" ]; then
+            no_cache=true
+          fi
+
+          # Only the base and toolchain builds read no_cache, so it implies
+          # rebuild_base or it would be a no-op. rebuild_base in turn forces
+          # every agent into the matrix below, so the rebuilt agent images
+          # actually inherit the refreshed toolchain.
+          if [ "$no_cache" = "true" ]; then
+            rebuild_base=true
           fi
 
           # agent -> npm package name
@@ -95,7 +126,8 @@ jobs:
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
           echo "need_agents=$need_agents" >> "$GITHUB_OUTPUT"
           echo "rebuild_base=$rebuild_base" >> "$GITHUB_OUTPUT"
-          echo "summary: rebuild_base=$rebuild_base need_agents=$need_agents matrix=$matrix"
+          echo "no_cache=$no_cache" >> "$GITHUB_OUTPUT"
+          echo "summary: rebuild_base=$rebuild_base no_cache=$no_cache need_agents=$need_agents matrix=$matrix"
 
   base:
     needs: precheck
@@ -119,6 +151,9 @@ jobs:
           context: images/base
           platforms: linux/amd64,linux/arm64
           push: true
+          # no-cache suppresses the cache-from import; cache-to still runs,
+          # so the buildcache is refreshed rather than left stale.
+          no-cache: ${{ needs.precheck.outputs.no_cache == 'true' }}
           tags: ${{ steps.tag.outputs.tag }}
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-base:buildcache
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-base:buildcache,mode=max
@@ -154,6 +189,7 @@ jobs:
           context: images/toolchain-fullstack
           platforms: linux/amd64,linux/arm64
           push: true
+          no-cache: ${{ needs.precheck.outputs.no_cache == 'true' }}
           build-args: |
             BASE_IMAGE=${{ needs.base.outputs.base_tag }}
           tags: ${{ steps.tag.outputs.tag }}
