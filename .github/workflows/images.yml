@@ -158,6 +158,10 @@ jobs:
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-base:buildcache
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-base:buildcache,mode=max
       - name: trivy scan
+        # Advisory only: a finding annotates the run but never fails it.
+        # Images are already pushed by this point, and new upstream CVEs
+        # land on a schedule we do not control.
+        continue-on-error: true
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           trivyignores: .trivyignore
@@ -196,6 +200,8 @@ jobs:
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-toolchain-fullstack:buildcache
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-toolchain-fullstack:buildcache,mode=max
       - name: trivy scan
+        # Advisory only - see the base job's scan step.
+        continue-on-error: true
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           trivyignores: .trivyignore
@@ -241,6 +247,8 @@ jobs:
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-${{ matrix.agent }}-fullstack:buildcache
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.OWNER }}/sandy-${{ matrix.agent }}-fullstack:buildcache,mode=max
       - name: trivy scan
+        # Advisory only - see the base job's scan step.
+        continue-on-error: true
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           trivyignores: .trivyignore

@@ -4,6 +4,12 @@
 # once TypeScript publishes binaries built with Go 1.26.5 or later.
 CVE-2026-39822
 
+# Infinite loop in golang.org/x/text norm.Iter, vendored into the same
+# prebuilt tsc binary. TypeScript 7.0.2 (current latest) still links
+# v0.38.0, so `npm install -g typescript` cannot pick up the 0.39.0 fix.
+# Remove once TypeScript publishes binaries built against x/text 0.39.0.
+CVE-2026-56852
+
 # Kernel CVEs matched against linux-libc-dev, the kernel headers that
 # build-essential pulls into the toolchain image. Headers only: the
 # container never runs the kernel they describe. The fixed version
