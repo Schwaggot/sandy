@@ -1,11 +1,15 @@
 package cli
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"sort"
+	"strings"
 
 	"github.com/schwaggot/sandy/internal/agent"
 	"github.com/schwaggot/sandy/internal/config"
+	"github.com/schwaggot/sandy/internal/inference"
 	"github.com/schwaggot/sandy/internal/profile"
 	"github.com/schwaggot/sandy/internal/project"
 	"github.com/spf13/cobra"
@@ -89,10 +93,42 @@ func newListCmd() *cobra.Command {
 						addHost = fmt.Sprintf("  add_host=%s", ep.AddHost)
 					}
 					fmt.Printf("  %-10s %s%s\n", ep.Protocol, url, addHost)
+					fmt.Printf("             %s\n", servedBy(ep))
 				}
 			}
 			return nil
 		},
 	})
 	return cmd
+}
+
+// servedBy reports what the endpoint currently serves, which is the only place
+// a model id exists - sandy stores none. Probing is best-effort: an endpoint
+// that is down still lists, it just cannot say what it holds.
+func servedBy(ep config.Endpoint) string {
+	if strings.TrimSpace(ep.URL) == "" || ep.URL == config.AnthropicCloudURL {
+		return "serves: (cloud default; sandy does not pin a model)"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), inference.DefaultTimeout)
+	defer cancel()
+
+	models, err := inference.List(ctx, ep.Protocol, ep.URL, os.Getenv(apiKeyEnv(ep.Protocol)), ep.AddHost)
+	if err != nil {
+		return fmt.Sprintf("serves: (unreachable: %v)", err)
+	}
+	sel, _ := inference.Select(models, ep.Prefer)
+	out := "serves: " + sel.ID
+	if sel.Context > 0 {
+		out += fmt.Sprintf(" (ctx %d)", sel.Context)
+	}
+	if len(models) > 1 {
+		others := make([]string, 0, len(models)-1)
+		for _, m := range models {
+			if m.ID != sel.ID {
+				others = append(others, m.ID)
+			}
+		}
+		out += "  also available: " + strings.Join(others, ", ")
+	}
+	return out
 }

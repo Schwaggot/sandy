@@ -2,6 +2,9 @@ name: pi
 description: Pi coding agent
 image: "{{registry}}/sandy-pi-{{toolchain}}:latest"
 command: ["pi"]
+model:
+  flag: "--model"
+  format: "{{provider}}/{{model}}"
 env_passthrough:
   - ANTHROPIC_API_KEY
 config_mounts:

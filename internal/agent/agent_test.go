@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -110,5 +111,62 @@ func TestLoadAllSkipsBrokenUserManifest(t *testing.T) {
 	// Bundled agents must still be present.
 	if _, ok := agents["claude"]; !ok {
 		t.Errorf("bundled agents should still load when a user manifest is broken")
+	}
+}
+
+func TestModelVarsExpand(t *testing.T) {
+	v := ModelVars{Model: "m1", Provider: "p1", URL: "http://h/v1", Context: 4096}
+	if got := v.Expand("{{provider}}/{{model}}"); got != "p1/m1" {
+		t.Errorf("got %q", got)
+	}
+	if got := v.Expand(`{"u":"{{url}}","c":{{context}}}`); got != `{"u":"http://h/v1","c":4096}` {
+		t.Errorf("got %q", got)
+	}
+	// No provider: the separator goes with it.
+	bare := ModelVars{Model: "m1"}
+	if got := bare.Expand("{{provider}}/{{model}}"); got != "m1" {
+		t.Errorf("got %q", got)
+	}
+	if got := bare.Expand("{{context}}"); got != "131072" {
+		t.Errorf("unadvertised context should fall back, got %q", got)
+	}
+}
+
+func TestModelSpecUserPinned(t *testing.T) {
+	s := ModelSpec{Flag: "--model", Aliases: []string{"-m"}}
+	for _, args := range [][]string{{"--model", "x"}, {"-m", "x"}, {"--model=x"}, {"run", "-m=x"}} {
+		if !s.UserPinned(args) {
+			t.Errorf("%v should count as pinned", args)
+		}
+	}
+	for _, args := range [][]string{nil, {"--modelfoo"}, {"hello"}} {
+		if s.UserPinned(args) {
+			t.Errorf("%v should not count as pinned", args)
+		}
+	}
+}
+
+// The opencode manifest injects its provider config as JSON; a typo there
+// would only surface at runtime inside the container.
+func TestBundledModelEnvTemplatesRenderValidJSON(t *testing.T) {
+	agents, _, err := LoadAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := ModelVars{Model: "m1", Provider: "p1", URL: "http://h:8090/v1", Context: 262144}
+	for name, m := range agents {
+		if m.Model == nil {
+			continue
+		}
+		for key, tmpl := range m.Model.Env {
+			rendered := v.Expand(tmpl)
+			if !strings.HasPrefix(strings.TrimSpace(rendered), "{") {
+				continue
+			}
+			var out map[string]any
+			if err := json.Unmarshal([]byte(rendered), &out); err != nil {
+				t.Errorf("%s %s: %v\n%s", name, key, err, rendered)
+			}
+		}
 	}
 }

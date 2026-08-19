@@ -9,6 +9,7 @@ import (
 
 	"github.com/schwaggot/sandy/internal/agent"
 	"github.com/schwaggot/sandy/internal/config"
+	"github.com/schwaggot/sandy/internal/inference"
 	"github.com/schwaggot/sandy/internal/profile"
 	"github.com/schwaggot/sandy/internal/runtime"
 )
@@ -55,7 +56,7 @@ func TestBuildBasic(t *testing.T) {
 	m := newManifest(t, configDir)
 	cfg := config.Config{ImageRegistry: "ghcr.io/x", Toolchain: "python"}
 
-	spec, err := Build(cfg, m, newProfile(), projectRoot, []string{"--flag", "value"})
+	spec, err := Build(cfg, m, newProfile(), projectRoot, []string{"--flag", "value"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +131,7 @@ func TestBuildOfflineNetwork(t *testing.T) {
 	m := newManifest(t, configDir)
 	p := newProfile()
 	p.Network = "offline"
-	spec, err := Build(config.Config{ImageRegistry: "x", Toolchain: "fullstack"}, m, p, t.TempDir(), nil)
+	spec, err := Build(config.Config{ImageRegistry: "x", Toolchain: "fullstack"}, m, p, t.TempDir(), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +151,7 @@ func TestBuildRequiredMountMissing(t *testing.T) {
 			Mode:      "ro",
 		}},
 	}
-	_, err := Build(config.Config{ImageRegistry: "x", Toolchain: "f"}, m, newProfile(), t.TempDir(), nil)
+	_, err := Build(config.Config{ImageRegistry: "x", Toolchain: "f"}, m, newProfile(), t.TempDir(), nil, nil)
 	if err == nil {
 		t.Fatal("expected error for missing required mount")
 	}
@@ -168,7 +169,7 @@ func TestBuildOptionalMountSkipped(t *testing.T) {
 			Optional:  true,
 		}},
 	}
-	spec, err := Build(config.Config{ImageRegistry: "x", Toolchain: "f"}, m, newProfile(), t.TempDir(), nil)
+	spec, err := Build(config.Config{ImageRegistry: "x", Toolchain: "f"}, m, newProfile(), t.TempDir(), nil, nil)
 	if err != nil {
 		t.Fatalf("optional missing mount should not error: %v", err)
 	}
@@ -188,7 +189,7 @@ func TestBuildPassthroughOnlyExported(t *testing.T) {
 		Command:        []string{"a"},
 		EnvPassthrough: []string{"UNSET_TOKEN"},
 	}
-	spec, _ := Build(config.Config{ImageRegistry: "x", Toolchain: "f"}, m, newProfile(), t.TempDir(), nil)
+	spec, _ := Build(config.Config{ImageRegistry: "x", Toolchain: "f"}, m, newProfile(), t.TempDir(), nil, nil)
 	if contains(spec.EnvPassthrough, "UNSET_TOKEN") {
 		t.Errorf("unset env should not be propagated")
 	}
@@ -199,7 +200,7 @@ func TestBuildRestrictedProfileErrors(t *testing.T) {
 	m := newManifest(t, configDir)
 	p := newProfile()
 	p.Network = "restricted"
-	_, err := Build(config.Config{ImageRegistry: "x", Toolchain: "f"}, m, p, t.TempDir(), nil)
+	_, err := Build(config.Config{ImageRegistry: "x", Toolchain: "f"}, m, p, t.TempDir(), nil, nil)
 	if err == nil {
 		t.Fatal("restricted profile should error in v1")
 	}
@@ -210,7 +211,7 @@ func TestBuildUnknownProfileErrors(t *testing.T) {
 	m := newManifest(t, configDir)
 	p := newProfile()
 	p.Network = "made-up"
-	_, err := Build(config.Config{ImageRegistry: "x", Toolchain: "f"}, m, p, t.TempDir(), nil)
+	_, err := Build(config.Config{ImageRegistry: "x", Toolchain: "f"}, m, p, t.TempDir(), nil, nil)
 	if err == nil {
 		t.Fatal("unknown network profile should error")
 	}
@@ -222,7 +223,7 @@ func TestBuildExtraMountAbsoluteReadOnlyByDefault(t *testing.T) {
 		ImageRegistry: "x", Toolchain: "f",
 		ExtraMounts: []config.ExtraMount{{Source: src, Target: "/workspace/shared"}},
 	}
-	spec, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil)
+	spec, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,7 +248,7 @@ func TestBuildExtraMountRWMode(t *testing.T) {
 		ImageRegistry: "x", Toolchain: "f",
 		ExtraMounts: []config.ExtraMount{{Source: src, Target: "/workspace/shared", Mode: "rw"}},
 	}
-	spec, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil)
+	spec, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,7 +271,7 @@ func TestBuildExtraMountRelativeToProjectRoot(t *testing.T) {
 		ImageRegistry: "x", Toolchain: "f",
 		ExtraMounts: []config.ExtraMount{{Source: "../sibling", Target: "/workspace/sibling"}},
 	}
-	spec, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), project, nil)
+	spec, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), project, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +295,7 @@ func TestBuildExtraMountTildeExpansion(t *testing.T) {
 		ImageRegistry: "x", Toolchain: "f",
 		ExtraMounts: []config.ExtraMount{{Source: "~/shared", Target: "/workspace/shared"}},
 	}
-	spec, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil)
+	spec, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +311,7 @@ func TestBuildExtraMountMissingRequiredErrors(t *testing.T) {
 		ImageRegistry: "x", Toolchain: "f",
 		ExtraMounts: []config.ExtraMount{{Source: missing, Target: "/workspace/x"}},
 	}
-	_, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil)
+	_, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil, nil)
 	if err == nil {
 		t.Fatal("expected error for missing required extra mount source")
 	}
@@ -322,7 +323,7 @@ func TestBuildExtraMountMissingOptionalSkipped(t *testing.T) {
 		ImageRegistry: "x", Toolchain: "f",
 		ExtraMounts: []config.ExtraMount{{Source: missing, Target: "/workspace/x", Optional: true}},
 	}
-	spec, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil)
+	spec, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil, nil)
 	if err != nil {
 		t.Fatalf("optional missing source should not error: %v", err)
 	}
@@ -338,7 +339,7 @@ func TestBuildExtraMountTargetCollisionRejected(t *testing.T) {
 			ImageRegistry: "x", Toolchain: "f",
 			ExtraMounts: []config.ExtraMount{{Source: src, Target: target}},
 		}
-		_, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil)
+		_, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil, nil)
 		if err == nil {
 			t.Errorf("target %q should be rejected", target)
 		}
@@ -351,7 +352,7 @@ func TestBuildExtraMountRelativeTargetRejected(t *testing.T) {
 		ImageRegistry: "x", Toolchain: "f",
 		ExtraMounts: []config.ExtraMount{{Source: src, Target: "shared"}},
 	}
-	_, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil)
+	_, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil, nil)
 	if err == nil {
 		t.Fatal("relative target must be rejected")
 	}
@@ -368,7 +369,7 @@ func TestBuildOpenAIEndpoint(t *testing.T) {
 			}}},
 		},
 	}
-	spec, err := Build(cfg, m, newProfile(), t.TempDir(), nil)
+	spec, err := Build(cfg, m, newProfile(), t.TempDir(), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,7 +393,7 @@ func TestBuildAnthropicEndpointDefaultURLOmitsBaseURL(t *testing.T) {
 			"claude": {Endpoints: []config.Endpoint{{Protocol: "anthropic"}}}, // no URL
 		},
 	}
-	spec, err := Build(cfg, m, newProfile(), t.TempDir(), nil)
+	spec, err := Build(cfg, m, newProfile(), t.TempDir(), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -415,7 +416,7 @@ func TestBuildAnthropicEndpointCustomURLSetsBaseURL(t *testing.T) {
 			}}},
 		},
 	}
-	spec, err := Build(cfg, m, newProfile(), t.TempDir(), nil)
+	spec, err := Build(cfg, m, newProfile(), t.TempDir(), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -436,7 +437,7 @@ func TestBuildEndpointMultipleProtocols(t *testing.T) {
 			}},
 		},
 	}
-	spec, err := Build(cfg, m, newProfile(), t.TempDir(), nil)
+	spec, err := Build(cfg, m, newProfile(), t.TempDir(), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -454,7 +455,7 @@ func TestBuildEndpointUnknownProtocolRejected(t *testing.T) {
 			"opencode": {Endpoints: []config.Endpoint{{Protocol: "bedrock", URL: "x"}}},
 		},
 	}
-	_, err := Build(cfg, m, newProfile(), t.TempDir(), nil)
+	_, err := Build(cfg, m, newProfile(), t.TempDir(), nil, nil)
 	if err == nil {
 		t.Fatal("unknown protocol must error")
 	}
@@ -472,7 +473,7 @@ func TestBuildEndpointDuplicateProtocolRejected(t *testing.T) {
 			}},
 		},
 	}
-	_, err := Build(cfg, m, newProfile(), t.TempDir(), nil)
+	_, err := Build(cfg, m, newProfile(), t.TempDir(), nil, nil)
 	if err == nil {
 		t.Fatal("duplicate protocol within an agent must error")
 	}
@@ -487,7 +488,7 @@ func TestBuildOpenAIEndpointRequiresURL(t *testing.T) {
 			"opencode": {Endpoints: []config.Endpoint{{Protocol: "openai"}}},
 		},
 	}
-	_, err := Build(cfg, m, newProfile(), t.TempDir(), nil)
+	_, err := Build(cfg, m, newProfile(), t.TempDir(), nil, nil)
 	if err == nil {
 		t.Fatal("openai protocol requires url")
 	}
@@ -504,7 +505,7 @@ func TestBuildEndpointAddHostReservedRejected(t *testing.T) {
 			}}},
 		},
 	}
-	_, err := Build(cfg, m, newProfile(), t.TempDir(), nil)
+	_, err := Build(cfg, m, newProfile(), t.TempDir(), nil, nil)
 	if err == nil {
 		t.Fatal("add_host must not override host.docker.internal")
 	}
@@ -520,7 +521,7 @@ func TestBuildEndpointsScopedToCurrentAgent(t *testing.T) {
 			"pi": {Endpoints: []config.Endpoint{{Protocol: "openai", URL: "http://halo:8080/v1"}}},
 		},
 	}
-	spec, err := Build(cfg, m, newProfile(), t.TempDir(), nil)
+	spec, err := Build(cfg, m, newProfile(), t.TempDir(), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -534,7 +535,7 @@ func TestBuildExtraHostsPropagated(t *testing.T) {
 		ImageRegistry: "x", Toolchain: "f",
 		ExtraHosts: map[string]string{"halo": "192.168.1.50", "registry.lan": "10.0.0.7"},
 	}
-	spec, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil)
+	spec, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -554,7 +555,7 @@ func TestBuildExtraHostsReservedNameRejected(t *testing.T) {
 		ImageRegistry: "x", Toolchain: "f",
 		ExtraHosts: map[string]string{"host.docker.internal": "10.0.0.1"},
 	}
-	_, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil)
+	_, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil, nil)
 	if err == nil {
 		t.Fatal("overriding the reserved host.docker.internal must error")
 	}
@@ -565,7 +566,7 @@ func TestBuildExtraHostsRequiresValues(t *testing.T) {
 		ImageRegistry: "x", Toolchain: "f",
 		ExtraHosts: map[string]string{"halo": ""},
 	}
-	_, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil)
+	_, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil, nil)
 	if err == nil {
 		t.Fatal("empty IP must be rejected")
 	}
@@ -577,7 +578,7 @@ func TestBuildReadOnlyWorkspace(t *testing.T) {
 	p := newProfile()
 	p.Hardening.ReadOnlyWorkspace = true
 
-	spec, err := Build(config.Config{ImageRegistry: "x", Toolchain: "f"}, m, p, t.TempDir(), nil)
+	spec, err := Build(config.Config{ImageRegistry: "x", Toolchain: "f"}, m, p, t.TempDir(), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -601,7 +602,7 @@ func TestBuildReadOnlyWorkspaceWithRWExtraMount(t *testing.T) {
 	p := newProfile()
 	p.Hardening.ReadOnlyWorkspace = true
 
-	spec, err := Build(cfg, newManifest(t, t.TempDir()), p, t.TempDir(), nil)
+	spec, err := Build(cfg, newManifest(t, t.TempDir()), p, t.TempDir(), nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -619,7 +620,7 @@ func TestBuildExtraMountTildeUserFormRejected(t *testing.T) {
 		ImageRegistry: "x", Toolchain: "f",
 		ExtraMounts: []config.ExtraMount{{Source: "~bob/shared", Target: "/workspace/x"}},
 	}
-	_, err := Build(cfg, newManifest(t, src), newProfile(), t.TempDir(), nil)
+	_, err := Build(cfg, newManifest(t, src), newProfile(), t.TempDir(), nil, nil)
 	if err == nil {
 		t.Fatal("~user form must be rejected, not silently treated as current user's home")
 	}
@@ -631,7 +632,7 @@ func TestBuildExtraMountInvalidMode(t *testing.T) {
 		ImageRegistry: "x", Toolchain: "f",
 		ExtraMounts: []config.ExtraMount{{Source: src, Target: "/workspace/x", Mode: "weird"}},
 	}
-	_, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil)
+	_, err := Build(cfg, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), nil, nil)
 	if err == nil {
 		t.Fatal("unknown mode must be rejected")
 	}
@@ -653,4 +654,132 @@ func contains(ss []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func modelManifest(t *testing.T, spec *agent.ModelSpec) agent.Manifest {
+	t.Helper()
+	m := newManifest(t, t.TempDir())
+	m.Model = spec
+	return m
+}
+
+func TestBuildInjectsResolvedModel(t *testing.T) {
+	m := modelManifest(t, &agent.ModelSpec{Flag: "--model", Format: "{{provider}}/{{model}}"})
+	sel := []inference.Selection{{
+		Model:    inference.Model{ID: "Qwen3.8-27B-think-MTP", Context: 262144},
+		BaseURL:  "http://gpu01:8090/v1",
+		Provider: "llama-cpp-gpu01",
+	}}
+
+	spec, err := Build(config.Config{ImageRegistry: "x", Toolchain: "f"}, m, newProfile(), t.TempDir(), []string{"hello"}, sel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"hello", "--model", "llama-cpp-gpu01/Qwen3.8-27B-think-MTP"}
+	if strings.Join(spec.Args, " ") != strings.Join(want, " ") {
+		t.Errorf("args: %v", spec.Args)
+	}
+}
+
+func TestBuildModelWithoutProviderDropsSeparator(t *testing.T) {
+	m := modelManifest(t, &agent.ModelSpec{Flag: "--model", Format: "{{provider}}/{{model}}"})
+	sel := []inference.Selection{{Model: inference.Model{ID: "claude-x"}, BaseURL: "http://h/v1"}}
+
+	spec, err := Build(config.Config{ImageRegistry: "x", Toolchain: "f"}, m, newProfile(), t.TempDir(), nil, sel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spec.Args) != 2 || spec.Args[1] != "claude-x" { // no user args, so flag then value
+		t.Errorf("args: %v", spec.Args)
+	}
+}
+
+// A model the user pinned on the command line always beats discovery.
+func TestBuildUserPinnedModelWins(t *testing.T) {
+	m := modelManifest(t, &agent.ModelSpec{Flag: "--model", Aliases: []string{"-m"}, Format: "{{model}}"})
+	sel := []inference.Selection{{Model: inference.Model{ID: "discovered"}, BaseURL: "http://h/v1"}}
+
+	for _, args := range [][]string{{"--model", "mine"}, {"-m", "mine"}, {"--model=mine"}} {
+		spec, err := Build(config.Config{ImageRegistry: "x", Toolchain: "f"}, m, newProfile(), t.TempDir(), args, sel)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Join(spec.Args, " ") != strings.Join(args, " ") {
+			t.Errorf("args %v: got %v", args, spec.Args)
+		}
+	}
+}
+
+func TestBuildModelEnvInjection(t *testing.T) {
+	m := modelManifest(t, &agent.ModelSpec{
+		Flag:   "--model",
+		Format: "{{provider}}/{{model}}",
+		Env:    map[string]string{"AGENT_CONFIG": `{"url":"{{url}}","model":"{{model}}","ctx":{{context}}}`},
+	})
+	sel := []inference.Selection{{
+		Model:    inference.Model{ID: "m1", Context: 262144},
+		BaseURL:  "http://gpu01:8090/v1",
+		Provider: "p1",
+	}}
+
+	spec, err := Build(config.Config{ImageRegistry: "x", Toolchain: "f"}, m, newProfile(), t.TempDir(), nil, sel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"url":"http://gpu01:8090/v1","model":"m1","ctx":262144}`
+	if spec.Env["AGENT_CONFIG"] != want {
+		t.Errorf("AGENT_CONFIG: %q", spec.Env["AGENT_CONFIG"])
+	}
+}
+
+// An endpoint that does not advertise n_ctx still has to render valid config.
+func TestBuildModelContextFallback(t *testing.T) {
+	m := modelManifest(t, &agent.ModelSpec{Env: map[string]string{"CTX": "{{context}}"}})
+	sel := []inference.Selection{{Model: inference.Model{ID: "m1"}, BaseURL: "http://h/v1"}}
+
+	spec, err := Build(config.Config{ImageRegistry: "x", Toolchain: "f"}, m, newProfile(), t.TempDir(), nil, sel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.Env["CTX"] != "131072" {
+		t.Errorf("CTX: %q", spec.Env["CTX"])
+	}
+}
+
+// No manifest model block, or a failed lookup, must leave the run untouched.
+func TestBuildWithoutModelSpecOrSelection(t *testing.T) {
+	sel := []inference.Selection{{Model: inference.Model{ID: "m1"}}}
+	spec, err := Build(config.Config{ImageRegistry: "x", Toolchain: "f"}, newManifest(t, t.TempDir()), newProfile(), t.TempDir(), []string{"x"}, sel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spec.Args) != 1 {
+		t.Errorf("no model spec must not inject args: %v", spec.Args)
+	}
+
+	m := modelManifest(t, &agent.ModelSpec{Flag: "--model", Format: "{{model}}"})
+	spec, err = Build(config.Config{ImageRegistry: "x", Toolchain: "f"}, m, newProfile(), t.TempDir(), []string{"x"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spec.Args) != 1 {
+		t.Errorf("failed discovery must not inject args: %v", spec.Args)
+	}
+}
+
+// Config order decides which endpoint's model is used.
+func TestBuildFirstResolvedEndpointWins(t *testing.T) {
+	m := modelManifest(t, &agent.ModelSpec{Flag: "--model", Format: "{{model}}"})
+	sel := []inference.Selection{
+		{Model: inference.Model{ID: "first"}, BaseURL: "http://a/v1"},
+		{Model: inference.Model{ID: "second"}, BaseURL: "http://b/v1"},
+	}
+
+	spec, err := Build(config.Config{ImageRegistry: "x", Toolchain: "f"}, m, newProfile(), t.TempDir(), nil, sel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.Args[1] != "first" {
+		t.Errorf("args: %v", spec.Args)
+	}
 }

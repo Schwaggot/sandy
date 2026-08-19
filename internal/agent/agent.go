@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/schwaggot/sandy/internal/assets"
@@ -13,12 +14,81 @@ import (
 )
 
 type Manifest struct {
-	Name           string         `yaml:"name"`
-	Description    string         `yaml:"description"`
-	Image          string         `yaml:"image"`
-	Command        []string       `yaml:"command"`
-	EnvPassthrough []string       `yaml:"env_passthrough"`
-	ConfigMounts   []ConfigMount  `yaml:"config_mounts"`
+	Name           string        `yaml:"name"`
+	Description    string        `yaml:"description"`
+	Image          string        `yaml:"image"`
+	Command        []string      `yaml:"command"`
+	EnvPassthrough []string      `yaml:"env_passthrough"`
+	ConfigMounts   []ConfigMount `yaml:"config_mounts"`
+	// Model declares how this agent is told which model to use. Absent means
+	// sandy leaves model selection entirely to the agent's own config.
+	Model *ModelSpec `yaml:"model"`
+}
+
+// ModelSpec is the agent-specific wiring for a model sandy resolved from an
+// endpoint's /models listing. Templates may use {{model}}, {{provider}},
+// {{url}} and {{context}}.
+type ModelSpec struct {
+	// Flag is appended to the agent's argv as "<flag> <rendered format>".
+	Flag string `yaml:"flag"`
+	// Format renders the flag's value, e.g. "{{provider}}/{{model}}".
+	Format string `yaml:"format"`
+	// Aliases are other spellings of Flag. If the user passes any of them,
+	// sandy injects nothing and their choice stands.
+	Aliases []string `yaml:"aliases"`
+	// Env holds extra environment variables rendered from the same templates.
+	// Agents that reject a model missing from their config need it declared
+	// here (opencode via OPENCODE_CONFIG_CONTENT).
+	Env map[string]string `yaml:"env"`
+}
+
+// defaultContextWindow is used when an endpoint does not advertise n_ctx but
+// the agent's config injection needs a number.
+const defaultContextWindow = 131072
+
+// ModelVars are the substitutions for a ModelSpec template.
+type ModelVars struct {
+	Model    string
+	Provider string
+	URL      string
+	Context  int
+}
+
+// Expand renders a ModelSpec template.
+func (v ModelVars) Expand(tmpl string) string {
+	ctx := v.Context
+	if ctx <= 0 {
+		ctx = defaultContextWindow
+	}
+	if v.Provider == "" {
+		// Drop the separator too, so "{{provider}}/{{model}}" degrades to
+		// a bare model id rather than "/model".
+		tmpl = strings.ReplaceAll(tmpl, "{{provider}}/", "")
+	}
+	r := strings.NewReplacer(
+		"{{model}}", v.Model,
+		"{{provider}}", v.Provider,
+		"{{url}}", v.URL,
+		"{{context}}", strconv.Itoa(ctx),
+	)
+	return r.Replace(tmpl)
+}
+
+// UserPinned reports whether args already pin a model, in which case sandy
+// must not inject one.
+func (s ModelSpec) UserPinned(args []string) bool {
+	names := append([]string{s.Flag}, s.Aliases...)
+	for _, a := range args {
+		for _, n := range names {
+			if n == "" {
+				continue
+			}
+			if a == n || strings.HasPrefix(a, n+"=") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 type ConfigMount struct {

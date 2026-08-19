@@ -101,12 +101,15 @@ agents:
       - protocol: openai
         url: http://halo:8080/v1
         add_host: 192.168.188.105
+        provider: halo            # agent-side provider id
+        prefer: ["*think*"]       # tie-breaker when several models are served
 
   opencode:
     endpoints:
       - protocol: openai
         url: http://halo:8080/v1
         add_host: 192.168.188.105
+        provider: halo
       - protocol: anthropic
         # url omitted -> defaults to https://api.anthropic.com
 
@@ -120,6 +123,8 @@ Schema:
 - `protocol` (required): `openai` or `anthropic`.
 - `url` (required for `openai`; optional for `anthropic`, defaults to `https://api.anthropic.com`).
 - `add_host` (optional): IP for the URL's hostname. Used when the container cannot resolve the name (LAN-only / mDNS hosts). The hostname is parsed from `url`. Cannot override `host.docker.internal`.
+- `provider` (optional): the id this endpoint is registered under in the agent's own config (pi's `models.json` key, opencode's provider key). Needed by agents whose model flag takes a `provider/model` pair.
+- `prefer` (optional): glob patterns, tried in order, used only to break a tie when the endpoint serves several models.
 
 Per agent, at most one entry per protocol after merging. Duplicates error.
 
@@ -134,7 +139,40 @@ API keys are forwarded by name only (`docker -e KEY`), so values never appear in
 
 If no endpoints are configured for an agent, behavior is identical to a sandy install without endpoints: the manifest's `env_passthrough` still forwards `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`, agents reach their default cloud URLs.
 
-Discover with `sandy list endpoints`. No per-run CLI override; edit YAML.
+Discover with `sandy list endpoints`, which also probes each endpoint and prints what it currently serves. No per-run CLI override for the endpoint itself; edit YAML.
+
+### Model resolution
+
+Sandy stores no model id anywhere - not in config, not in a manifest. A server that swaps models must not require a config edit, so the model is read from the endpoint at launch:
+
+1. Before building the run spec, sandy GETs `<url>/models` for each configured endpoint (3s timeout).
+2. `prefer` globs pick among the served models (case-insensitive, first pattern that matches any model wins). Without preferences, or with none matching, the first served model is used - which on a single-model server is the whole answer.
+3. The agent manifest's `model:` block turns that into agent-specific wiring.
+
+A hostname that only resolves inside the container is retried against `add_host` for the host-side lookup. Every failure here is a warning, never an error: the agent still starts and falls back to whatever its own config defaults to.
+
+Manifest block (`internal/assets/agents/<name>.yaml`), with `{{model}}`, `{{provider}}`, `{{url}}` and `{{context}}` available in the templates:
+
+```yaml
+model:
+  flag: "--model"                     # appended to the agent's argv
+  aliases: ["-m"]                     # other spellings; if the user passes one, sandy injects nothing
+  format: "{{provider}}/{{model}}"    # degrades to "{{model}}" when no provider is configured
+  env:                                # optional, for agents that reject unknown models
+    OPENCODE_CONFIG_CONTENT: '{"provider":{...}}'
+```
+
+`{{context}}` renders the endpoint-reported context window, or 131072 when the server does not advertise one.
+
+Agents differ in what they accept:
+
+| Agent      | Wiring                                                                                       |
+|------------|----------------------------------------------------------------------------------------------|
+| `pi`       | `--model <provider>/<model>`; accepts an id absent from `models.json` (warns, then uses it)    |
+| `claude`   | `--model <model>`; only resolved when a non-default `ANTHROPIC_BASE_URL` endpoint is configured |
+| `opencode` | rejects a model absent from its config, so sandy also injects the provider entry through `OPENCODE_CONFIG_CONTENT`, which opencode merges over `opencode.json` |
+
+Omit the manifest's `model:` block to leave model selection entirely to the agent's own config.
 
 ## Profiles
 

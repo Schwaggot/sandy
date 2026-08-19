@@ -2,6 +2,9 @@ name: claude
 description: Claude Code CLI
 image: "{{registry}}/sandy-claude-{{toolchain}}:latest"
 command: ["claude"]
+model:
+  flag: "--model"
+  format: "{{model}}"
 env_passthrough:
   - ANTHROPIC_API_KEY
 config_mounts:

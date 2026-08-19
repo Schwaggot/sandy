@@ -10,9 +10,12 @@ import (
 )
 
 const (
-	DefaultRegistry = "ghcr.io/schwaggot"
-	DefaultProfile  = "open"
+	DefaultRegistry  = "ghcr.io/schwaggot"
+	DefaultProfile   = "open"
 	DefaultToolchain = "fullstack"
+	// AnthropicCloudURL is the stock Anthropic endpoint. Configuring it
+	// explicitly is a no-op: sandy leaves the standard cloud client path alone.
+	AnthropicCloudURL = "https://api.anthropic.com"
 )
 
 // Config is the merged effective configuration after layering.
@@ -43,6 +46,14 @@ type Endpoint struct {
 	Protocol string `yaml:"protocol"` // openai | anthropic
 	URL      string `yaml:"url"`      // required for openai; optional for anthropic
 	AddHost  string `yaml:"add_host"` // optional; IP for the URL hostname when DNS cannot resolve it
+	// Provider is the agent-side provider id this endpoint is registered
+	// under (pi's models.json key, opencode's provider key). Needed by agents
+	// whose model flag takes a "provider/model" pair.
+	Provider string `yaml:"provider"`
+	// Prefer holds glob patterns tried in order when the endpoint serves more
+	// than one model. No model id is ever configured statically; this only
+	// breaks the tie. First pattern matching a served model wins.
+	Prefer []string `yaml:"prefer"`
 }
 
 // ExtraMount is an additional host path bound into the sandbox, declared in

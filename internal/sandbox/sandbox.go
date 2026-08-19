@@ -11,6 +11,7 @@ import (
 
 	"github.com/schwaggot/sandy/internal/agent"
 	"github.com/schwaggot/sandy/internal/config"
+	"github.com/schwaggot/sandy/internal/inference"
 	"github.com/schwaggot/sandy/internal/profile"
 	"github.com/schwaggot/sandy/internal/project"
 	"github.com/schwaggot/sandy/internal/runtime"
@@ -21,8 +22,11 @@ const (
 	containerWorkspace = "/workspace"
 )
 
-// Build assembles a RunSpec from the resolved config, agent manifest, profile, and project root.
-func Build(cfg config.Config, m agent.Manifest, p profile.Profile, projectRoot string, args []string) (runtime.RunSpec, error) {
+// Build assembles a RunSpec from the resolved config, agent manifest, profile,
+// and project root. models holds the models discovered at the agent's
+// endpoints, in config order; empty means no discovery ran (or all of it
+// failed) and the agent picks its own model.
+func Build(cfg config.Config, m agent.Manifest, p profile.Profile, projectRoot string, args []string, models []inference.Selection) (runtime.RunSpec, error) {
 	hash := project.Hash(projectRoot)
 
 	spec := runtime.RunSpec{
@@ -78,6 +82,9 @@ func Build(cfg config.Config, m agent.Manifest, p profile.Profile, projectRoot s
 	if err := applyEndpoints(&spec, cfg.Agents[m.Name].Endpoints); err != nil {
 		return spec, err
 	}
+
+	// Model discovered at launch from the endpoint's /models listing.
+	applyModel(&spec, m, models)
 
 	// Extra hosts from user/project config (rendered as --add-host).
 	for name, ip := range cfg.ExtraHosts {
@@ -154,8 +161,6 @@ func Build(cfg config.Config, m agent.Manifest, p profile.Profile, projectRoot s
 	return spec, nil
 }
 
-const anthropicCloudURL = "https://api.anthropic.com"
-
 // applyEndpoints wires each endpoint into the runtime spec. Validates the
 // protocol, enforces per-protocol uniqueness within the agent, and rejects
 // add_host collisions with sandy-managed hostnames.
@@ -178,7 +183,7 @@ func applyEndpoints(spec *runtime.RunSpec, endpoints []config.Endpoint) error {
 				return fmt.Errorf("endpoints: duplicate %q protocol entries for the same agent", ep.Protocol)
 			}
 			seen[ep.Protocol] = true
-			if u := strings.TrimSpace(ep.URL); u != "" && u != anthropicCloudURL {
+			if u := strings.TrimSpace(ep.URL); u != "" && u != config.AnthropicCloudURL {
 				spec.Env["ANTHROPIC_BASE_URL"] = u
 			}
 			appendUnique(&spec.EnvPassthrough, "ANTHROPIC_API_KEY")
@@ -191,7 +196,7 @@ func applyEndpoints(spec *runtime.RunSpec, endpoints []config.Endpoint) error {
 		}
 		urlStr := ep.URL
 		if urlStr == "" {
-			urlStr = anthropicCloudURL
+			urlStr = config.AnthropicCloudURL
 		}
 		u, err := url.Parse(urlStr)
 		if err != nil || u.Hostname() == "" {
@@ -204,6 +209,33 @@ func applyEndpoints(spec *runtime.RunSpec, endpoints []config.Endpoint) error {
 		spec.AddHosts[host] = ep.AddHost
 	}
 	return nil
+}
+
+// applyModel pins the discovered model via the manifest's model spec: an
+// appended CLI flag plus any env the agent needs to accept that model. A
+// model the user pinned on the command line always wins.
+func applyModel(spec *runtime.RunSpec, m agent.Manifest, models []inference.Selection) {
+	if m.Model == nil || len(models) == 0 || m.Model.UserPinned(spec.Args) {
+		return
+	}
+	// First endpoint that resolved wins, so config order is the tie-breaker
+	// when an agent has both an openai and an anthropic endpoint.
+	sel := models[0]
+
+	vars := agent.ModelVars{
+		Model:    sel.ID,
+		Provider: sel.Provider,
+		URL:      sel.BaseURL,
+		Context:  sel.Context,
+	}
+	if m.Model.Flag != "" && m.Model.Format != "" {
+		// Appended, not prepended: opencode reads a flag placed before its
+		// subcommand as the subcommand's own positional and starts the TUI.
+		spec.Args = append(spec.Args, m.Model.Flag, vars.Expand(m.Model.Format))
+	}
+	for k, tmpl := range m.Model.Env {
+		spec.Env[k] = vars.Expand(tmpl)
+	}
 }
 
 func appendUnique(dst *[]string, v string) {
