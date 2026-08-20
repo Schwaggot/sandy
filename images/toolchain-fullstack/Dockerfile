@@ -3,7 +3,10 @@ FROM ${BASE_IMAGE}
 
 USER root
 
-ENV DEBIAN_FRONTEND=noninteractive
+# Root build steps inherit HOME=/home/sandy from the base image; point them at
+# /root so their caches never land in the runtime home. Reset before USER sandy.
+ENV DEBIAN_FRONTEND=noninteractive \
+    HOME=/root
 
 # Python
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -36,7 +39,8 @@ RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/* \
     && npm install -g npm@latest \
-    && npm install -g pnpm typescript
+    && npm install -g pnpm typescript \
+    && rm -rf /root/.npm
 
 # uv (Astral) - fast Python package manager.
 RUN curl -fsSL https://astral.sh/uv/install.sh \
@@ -47,10 +51,12 @@ RUN UV_TOOL_BIN_DIR=/usr/local/bin UV_TOOL_DIR=/opt/uv-tools \
         uv tool install ruff \
     && UV_TOOL_BIN_DIR=/usr/local/bin UV_TOOL_DIR=/opt/uv-tools \
         uv tool install pytest \
-    && chmod -R a+rX /opt/uv-tools
+    && chmod -R a+rX /opt/uv-tools \
+    && rm -rf /root/.cache
 
-# Build-time tools may have created root-owned dirs under /home/sandy;
-# return ownership so the runtime sandy user can write to its caches.
-RUN chown -R sandy:sandy /home/sandy
+ENV HOME=/home/sandy
+
+# Backstop: a root-owned leftover in the runtime home breaks the entrypoint's mkdir.
+RUN chown -R sandy:sandy /home/sandy && chmod 1777 /home/sandy
 
 USER sandy

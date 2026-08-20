@@ -243,7 +243,7 @@ Resolution rules:
 
 ### UID/GID
 
-- Linux: `--user $(id -u):$(id -g)`; entrypoint fixes ownership of $HOME-writable paths as needed.
+- Linux: `--user $(id -u):$(id -g)`. The image ships `/home/sandy` and its XDG dirs `1777`, so any UID can write them; the entrypoint runs unprivileged and only creates what is missing, it cannot chown.
 - macOS/Windows (Docker Desktop): default image user; the runtime's FUSE layer handles ownership.
 
 ### Interactivity
