@@ -1,0 +1,28 @@
+name: qwen
+description: Qwen Code CLI
+image: "{{registry}}/sandy-qwen-{{toolchain}}:latest"
+command: ["qwen"]
+model:
+  flag: "--model"
+  aliases: ["-m"]
+  format: "{{model}}"
+  # --auth-type outranks ~/.qwen/settings.json, whose host-side selectedType
+  # (a stale qwen-oauth login, an Alibaba ModelStudio key) would otherwise
+  # route the sandbox back to the cloud.
+  args: ["--auth-type", "{{protocol}}"]
+  env:
+    # Argv only configures the CLI itself; the daemon and subagents qwen spawns
+    # read the model from the environment.
+    OPENAI_MODEL: "{{model}}"
+env_passthrough:
+  - OPENAI_API_KEY
+config_mounts:
+  # optional because qwen is configured entirely from the endpoint wiring:
+  # a host that has never run qwen still gets a working sandbox.
+  - host:
+      linux: ~/.qwen
+      darwin: ~/.qwen
+      windows: ~/.qwen
+    container: /home/sandy/.qwen
+    mode: rw
+    optional: true

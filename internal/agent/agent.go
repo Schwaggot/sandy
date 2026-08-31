@@ -27,7 +27,7 @@ type Manifest struct {
 
 // ModelSpec is the agent-specific wiring for a model sandy resolved from an
 // endpoint's /models listing. Templates may use {{model}}, {{provider}},
-// {{url}} and {{context}}.
+// {{protocol}}, {{url}} and {{context}}.
 type ModelSpec struct {
 	// Flag is appended to the agent's argv as "<flag> <rendered format>".
 	Flag string `yaml:"flag"`
@@ -36,6 +36,10 @@ type ModelSpec struct {
 	// Aliases are other spellings of Flag. If the user passes any of them,
 	// sandy injects nothing and their choice stands.
 	Aliases []string `yaml:"aliases"`
+	// Args are extra argv entries appended after the model flag, rendered from
+	// the same templates. Agents that must be told which protocol to speak
+	// need it here (qwen via --auth-type).
+	Args []string `yaml:"args"`
 	// Env holds extra environment variables rendered from the same templates.
 	// Agents that reject a model missing from their config need it declared
 	// here (opencode via OPENCODE_CONFIG_CONTENT).
@@ -50,6 +54,7 @@ const defaultContextWindow = 131072
 type ModelVars struct {
 	Model    string
 	Provider string
+	Protocol string
 	URL      string
 	Context  int
 }
@@ -68,6 +73,7 @@ func (v ModelVars) Expand(tmpl string) string {
 	r := strings.NewReplacer(
 		"{{model}}", v.Model,
 		"{{provider}}", v.Provider,
+		"{{protocol}}", v.Protocol,
 		"{{url}}", v.URL,
 		"{{context}}", strconv.Itoa(ctx),
 	)

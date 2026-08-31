@@ -4,7 +4,7 @@ Run AI coding agents in sandboxed Docker containers, using your existing agent c
 
 ```
 cd my-project
-sandy claude       # or: sandy pi / sandy opencode
+sandy claude       # or: sandy pi / sandy opencode / sandy qwen
 ```
 
 See [docs/SPECIFICATION.md](docs/SPECIFICATION.md) for the full design.
@@ -57,6 +57,11 @@ https://github.com/<user>?tab=packages and skip the login entirely.
   `sandy claude` you will be prompted to `/login`. After authenticating,
   `~/.claude/.credentials.json` lives in the bind-mounted config dir and is
   reused for subsequent runs.
+- **Qwen Code**: when an endpoint under `agents.qwen.endpoints` resolves, sandy
+  passes `--auth-type <protocol>` next to the model, which outranks a cloud
+  login cached in `~/.qwen/settings.json`. It injects neither if no endpoint is
+  configured, if the endpoint is unreachable, or if you pinned a model yourself
+  with `-m` - qwen then falls back to that cached config and its `/auth` prompt.
 - **Local model endpoints (LM Studio etc.)**: use `host.docker.internal` as
   the hostname in your agent config, not `127.0.0.1` or `localhost` (those
   refer to the container, not the host). Sandy already adds the host-gateway
@@ -66,7 +71,7 @@ https://github.com/<user>?tab=packages and skip the login entirely.
 
 ```
 sandy init                 # detect toolchains; write .sandy/config.yaml
-sandy <agent> [-- args]    # run an agent: pi | opencode | claude
+sandy <agent> [-- args]    # run an agent: pi | opencode | claude | qwen
 sandy list agents          # list available agents
 sandy list profiles        # list available profiles
 sandy doctor               # check environment

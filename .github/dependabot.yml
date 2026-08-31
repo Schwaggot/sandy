@@ -19,6 +19,7 @@ updates:
       - /images/agent-pi
       - /images/agent-opencode
       - /images/agent-claude
+      - /images/agent-qwen
     schedule:
       interval: weekly
     open-pull-requests-limit: 5

@@ -35,6 +35,8 @@ type Selection struct {
 	BaseURL string
 	// Provider is the agent-side provider id the endpoint is registered under.
 	Provider string
+	// Protocol is the endpoint's wire protocol ("openai" or "anthropic").
+	Protocol string
 }
 
 // listResponse covers the OpenAI /models shape. llama.cpp and vLLM both add a

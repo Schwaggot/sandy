@@ -94,10 +94,11 @@ jobs:
             [pi]="@earendil-works/pi-coding-agent"
             [claude]="@anthropic-ai/claude-code"
             [opencode]="opencode-ai"
+            [qwen]="@qwen-code/qwen-code"
           )
 
           include=()
-          for agent in pi claude opencode; do
+          for agent in pi claude opencode qwen; do
             latest=$(curl -fsSL "https://registry.npmjs.org/${PKG[$agent]}/latest" | jq -r '.version')
 
             current=""

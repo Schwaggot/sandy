@@ -119,7 +119,8 @@ func Build(cfg config.Config, m agent.Manifest, p profile.Profile, projectRoot s
 	passthrough := append([]string{"TERM", "COLORTERM"}, m.EnvPassthrough...)
 	for _, k := range passthrough {
 		if _, ok := os.LookupEnv(k); ok {
-			spec.EnvPassthrough = append(spec.EnvPassthrough, k)
+			// Dedup: applyEndpoints already added the protocol's key.
+			appendUnique(&spec.EnvPassthrough, k)
 		}
 	}
 	spec.Env["SANDY"] = "1"
@@ -212,8 +213,9 @@ func applyEndpoints(spec *runtime.RunSpec, endpoints []config.Endpoint) error {
 }
 
 // applyModel pins the discovered model via the manifest's model spec: an
-// appended CLI flag plus any env the agent needs to accept that model. A
-// model the user pinned on the command line always wins.
+// appended CLI flag, any extra argv the agent needs, plus any env the agent
+// needs to accept that model. A model the user pinned on the command line
+// always wins.
 func applyModel(spec *runtime.RunSpec, m agent.Manifest, models []inference.Selection) {
 	if m.Model == nil || len(models) == 0 || m.Model.UserPinned(spec.Args) {
 		return
@@ -225,6 +227,7 @@ func applyModel(spec *runtime.RunSpec, m agent.Manifest, models []inference.Sele
 	vars := agent.ModelVars{
 		Model:    sel.ID,
 		Provider: sel.Provider,
+		Protocol: sel.Protocol,
 		URL:      sel.BaseURL,
 		Context:  sel.Context,
 	}
@@ -232,6 +235,9 @@ func applyModel(spec *runtime.RunSpec, m agent.Manifest, models []inference.Sele
 		// Appended, not prepended: opencode reads a flag placed before its
 		// subcommand as the subcommand's own positional and starts the TUI.
 		spec.Args = append(spec.Args, m.Model.Flag, vars.Expand(m.Model.Format))
+	}
+	for _, a := range m.Model.Args {
+		spec.Args = append(spec.Args, vars.Expand(a))
 	}
 	for k, tmpl := range m.Model.Env {
 		spec.Env[k] = vars.Expand(tmpl)

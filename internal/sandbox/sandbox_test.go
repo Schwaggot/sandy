@@ -783,3 +783,91 @@ func TestBuildFirstResolvedEndpointWins(t *testing.T) {
 		t.Errorf("args: %v", spec.Args)
 	}
 }
+
+// qwen has to be told which protocol to speak, or a stale ~/.qwen/settings.json
+// routes the sandbox back to the cloud.
+func TestBuildInjectsModelArgs(t *testing.T) {
+	m := modelManifest(t, &agent.ModelSpec{
+		Flag:   "--model",
+		Format: "{{model}}",
+		Args:   []string{"--auth-type", "{{protocol}}"},
+	})
+	sel := []inference.Selection{{
+		Model:    inference.Model{ID: "m1"},
+		BaseURL:  "http://gpu01:8090/v1",
+		Protocol: "openai",
+	}}
+
+	spec, err := Build(config.Config{ImageRegistry: "x", Toolchain: "f"}, m, newProfile(), t.TempDir(), nil, sel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"--model", "m1", "--auth-type", "openai"}
+	if strings.Join(spec.Args, " ") != strings.Join(want, " ") {
+		t.Errorf("args: %v", spec.Args)
+	}
+}
+
+// The bundled qwen manifest is the reason model args exist: end to end it must
+// pin both the model and the protocol at the configured endpoint.
+func TestBuildQwenPinsEndpointAndProtocol(t *testing.T) {
+	// Isolated home: read the bundled manifest, not a ~/.sandy/agents/ override,
+	// and leave ~/.qwen missing so the optional config mount is skipped.
+	t.Setenv("HOME", t.TempDir())
+	m, err := agent.Get("qwen")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{ImageRegistry: "x", Toolchain: "f", Agents: map[string]config.AgentConfig{
+		"qwen": {Endpoints: []config.Endpoint{{Protocol: "openai", URL: "http://gpu01:8090/v1"}}},
+	}}
+	sel := []inference.Selection{{
+		Model:    inference.Model{ID: "Qwen3-Coder"},
+		BaseURL:  "http://gpu01:8090/v1",
+		Protocol: "openai",
+	}}
+
+	spec, err := Build(cfg, m, newProfile(), t.TempDir(), nil, sel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "--model Qwen3-Coder --auth-type openai"
+	if strings.Join(spec.Args, " ") != want {
+		t.Errorf("args: %v", spec.Args)
+	}
+	if spec.Env["OPENAI_BASE_URL"] != "http://gpu01:8090/v1" {
+		t.Errorf("OPENAI_BASE_URL: %q", spec.Env["OPENAI_BASE_URL"])
+	}
+	if spec.Env["OPENAI_MODEL"] != "Qwen3-Coder" {
+		t.Errorf("OPENAI_MODEL: %q", spec.Env["OPENAI_MODEL"])
+	}
+	if !contains(spec.EnvPassthrough, "OPENAI_API_KEY") {
+		t.Errorf("api key must be forwarded by name: %v", spec.EnvPassthrough)
+	}
+}
+
+// applyEndpoints and the manifest both name the protocol's API key. Docker
+// must not be handed it twice, or every dry-run of an agent with a matching
+// endpoint prints a duplicate -e.
+func TestBuildEnvPassthroughDeduped(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "k")
+	m := newManifest(t, t.TempDir())
+	m.EnvPassthrough = []string{"OPENAI_API_KEY"}
+	cfg := config.Config{ImageRegistry: "x", Toolchain: "f", Agents: map[string]config.AgentConfig{
+		"test": {Endpoints: []config.Endpoint{{Protocol: "openai", URL: "http://h/v1"}}},
+	}}
+
+	spec, err := Build(cfg, m, newProfile(), t.TempDir(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, k := range spec.EnvPassthrough {
+		if k == "OPENAI_API_KEY" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("OPENAI_API_KEY forwarded %d times: %v", n, spec.EnvPassthrough)
+	}
+}

@@ -105,7 +105,7 @@ func resolveModels(m agent.Manifest, endpoints []config.Endpoint) []inference.Se
 		if !ok {
 			continue
 		}
-		out = append(out, inference.Selection{Model: sel, BaseURL: url, Provider: ep.Provider})
+		out = append(out, inference.Selection{Model: sel, BaseURL: url, Provider: ep.Provider, Protocol: ep.Protocol})
 	}
 	return out
 }

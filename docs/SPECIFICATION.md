@@ -71,7 +71,7 @@ Maps deep-merge. Lists are replaced, except `allowlist_domains` and `extra_mount
 
 ## Agent manifests
 
-YAML, declarative. Bundled defaults for `pi`, `opencode`, `claude` (Claude Code CLI). Users may add manifests in `~/.sandy/agents/`.
+YAML, declarative. Bundled defaults for `pi`, `opencode`, `claude` (Claude Code CLI) and `qwen` (Qwen Code CLI). Users may add manifests in `~/.sandy/agents/`.
 
 ```yaml
 name: pi
@@ -116,6 +116,12 @@ agents:
   claude:
     endpoints:
       - protocol: anthropic
+
+  qwen:
+    endpoints:
+      - protocol: openai
+        url: http://halo:8080/v1
+        add_host: 192.168.188.105
 ```
 
 Schema:
@@ -151,13 +157,14 @@ Sandy stores no model id anywhere - not in config, not in a manifest. A server t
 
 A hostname that only resolves inside the container is retried against `add_host` for the host-side lookup. Every failure here is a warning, never an error: the agent still starts and falls back to whatever its own config defaults to.
 
-Manifest block (`internal/assets/agents/<name>.yaml`), with `{{model}}`, `{{provider}}`, `{{url}}` and `{{context}}` available in the templates:
+Manifest block (`internal/assets/agents/<name>.yaml`), with `{{model}}`, `{{provider}}`, `{{protocol}}`, `{{url}}` and `{{context}}` available in the templates:
 
 ```yaml
 model:
   flag: "--model"                     # appended to the agent's argv
   aliases: ["-m"]                     # other spellings; if the user passes one, sandy injects nothing
   format: "{{provider}}/{{model}}"    # degrades to "{{model}}" when no provider is configured
+  args: ["--auth-type", "{{protocol}}"]  # optional, extra argv appended after the flag
   env:                                # optional, for agents that reject unknown models
     OPENCODE_CONFIG_CONTENT: '{"provider":{...}}'
 ```
@@ -171,6 +178,7 @@ Agents differ in what they accept:
 | `pi`       | `--model <provider>/<model>`; accepts an id absent from `models.json` (warns, then uses it)    |
 | `claude`   | `--model <model>`; only resolved when a non-default `ANTHROPIC_BASE_URL` endpoint is configured |
 | `opencode` | rejects a model absent from its config, so sandy also injects the provider entry through `OPENCODE_CONFIG_CONTENT`, which opencode merges over `opencode.json` |
+| `qwen`     | `--model <model>` plus `--auth-type <protocol>`, which outranks the `security.auth.selectedType` in a bind-mounted `~/.qwen/settings.json`; `OPENAI_MODEL` carries the same choice to the subprocesses qwen spawns. Both ride the rule above, so a failed lookup leaves a cached cloud login in charge |
 
 Omit the manifest's `model:` block to leave model selection entirely to the agent's own config.
 
@@ -203,7 +211,7 @@ All published to `ghcr.io/<owner>/`. Multi-arch: amd64 + arm64. Base: `debian:tr
 
 - `sandy-base` - Debian trixie slim, non-root user `sandy` (uid 1000), `git`, ca-certificates, curl, common utilities, entrypoint.
 - `sandy-toolchain-fullstack` FROM base - Python 3.13 + uv + ruff + pytest, clang/LLVM + cmake + conan + ninja, Node LTS + latest npm + pnpm + TypeScript.
-- `sandy-{pi,opencode,claude}-fullstack` FROM `sandy-toolchain-fullstack` - the agent CLI installed on top.
+- `sandy-{pi,opencode,claude,qwen}-fullstack` FROM `sandy-toolchain-fullstack` - the agent CLI installed on top.
 
 Per-language toolchain images (python/cpp/node only) are not currently published; their Dockerfiles can be re-added when there is a need to slim things down.
 
@@ -217,7 +225,7 @@ Per-language toolchain images (python/cpp/node only) are not currently published
 ### Mounts
 
 - CWD bind-mounted read/write at `/workspace`; container WORKDIR is `/workspace`. The profile's `hardening.read_only_workspace` flips this to read-only for exploration-only sessions; rw `extra_mounts` under `/workspace/...` still override and stay writable.
-- Agent config paths from the manifest bind-mounted read/write (agents like pi/claude/opencode need to write sessions and lock files into their config dir).
+- Agent config paths from the manifest bind-mounted read/write (agents like pi/claude/opencode/qwen need to write sessions and lock files into their config dir).
 - Additional host paths can be bound via the `extra_mounts` config field (see below); default is read-only.
 - No `.gitconfig`, no SSH agent forwarding. Commits/pushes happen on the host. `git` is installed in the image; `.git` works because it lives inside the CWD.
 
@@ -316,5 +324,5 @@ Credentials persist in `~/.docker/config.json`.
 
 ## v1 -> v2
 
-- v1: cross-platform CLI, fullstack-only image set for pi/opencode/claude, `offline` and `open` profiles, ephemeral runs, hardening defaults, `sandy init`.
+- v1: cross-platform CLI, fullstack-only image set for pi/opencode/claude/qwen, `offline` and `open` profiles, ephemeral runs, hardening defaults, `sandy init`.
 - v2: `restricted` profile with proxy sidecar and allowlist, Podman support wired through the `Runtime` interface, per-language toolchain images (slim builds), optional Homebrew tap and Scoop bucket.

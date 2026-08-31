@@ -18,7 +18,7 @@ func TestLoadAllBundled(t *testing.T) {
 	if len(warnings) != 0 {
 		t.Errorf("unexpected warnings: %v", warnings)
 	}
-	for _, name := range []string{"pi", "opencode", "claude"} {
+	for _, name := range []string{"pi", "opencode", "claude", "qwen"} {
 		if _, ok := agents[name]; !ok {
 			t.Errorf("missing bundled agent %q", name)
 		}
@@ -115,8 +115,11 @@ func TestLoadAllSkipsBrokenUserManifest(t *testing.T) {
 }
 
 func TestModelVarsExpand(t *testing.T) {
-	v := ModelVars{Model: "m1", Provider: "p1", URL: "http://h/v1", Context: 4096}
+	v := ModelVars{Model: "m1", Provider: "p1", Protocol: "openai", URL: "http://h/v1", Context: 4096}
 	if got := v.Expand("{{provider}}/{{model}}"); got != "p1/m1" {
+		t.Errorf("got %q", got)
+	}
+	if got := v.Expand("{{protocol}}"); got != "openai" {
 		t.Errorf("got %q", got)
 	}
 	if got := v.Expand(`{"u":"{{url}}","c":{{context}}}`); got != `{"u":"http://h/v1","c":4096}` {
