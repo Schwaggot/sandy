@@ -1,10 +1,12 @@
 package config
 
 import (
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -54,6 +56,11 @@ type Endpoint struct {
 	// than one model. No model id is ever configured statically; this only
 	// breaks the tie. First pattern matching a served model wins.
 	Prefer []string `yaml:"prefer"`
+	// CACert is a host path to a PEM CA bundle trusted for this endpoint,
+	// for servers behind an internal CA. Sandy uses it for host-side model
+	// discovery and bind-mounts it into the container for the agent itself.
+	// Same path forms as ExtraMount.Source.
+	CACert string `yaml:"ca_cert"`
 }
 
 // ExtraMount is an additional host path bound into the sandbox, declared in
@@ -192,4 +199,47 @@ func Write(projectRoot string, cfg Config) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, "config.yaml"), b, 0o644)
+}
+
+// ResolveHostPath expands a user-supplied host path: ~ (or ~/...) to $HOME,
+// relative paths against projectRoot. Returns an absolute, cleaned path.
+// The ~user form is not supported. field names the config key for errors.
+func ResolveHostPath(src, projectRoot, field string) (string, error) {
+	if strings.HasPrefix(src, "~") {
+		if src != "~" && !strings.HasPrefix(src, "~/") && !strings.HasPrefix(src, `~\`) {
+			return "", fmt.Errorf("%s: ~user form is not supported in %q (use ~ or ~/path)", field, src)
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("%s: cannot expand %q: %w", field, src, err)
+		}
+		rest := strings.TrimLeft(strings.TrimPrefix(src, "~"), `/\`)
+		src = filepath.Join(home, rest)
+	}
+	if !filepath.IsAbs(src) {
+		if projectRoot == "" {
+			return "", fmt.Errorf("%s: relative source %q requires a project root", field, src)
+		}
+		src = filepath.Join(projectRoot, src)
+	}
+	return filepath.Clean(src), nil
+}
+
+// ResolveCACert resolves an endpoint's ca_cert to an absolute host path and
+// requires it to hold at least one PEM certificate. The content check matters:
+// a project-level config is not fully trusted, and without it any host file
+// could be named here and would be bind-mounted into the container.
+func ResolveCACert(src, projectRoot string) (string, error) {
+	host, err := ResolveHostPath(src, projectRoot, "ca_cert")
+	if err != nil {
+		return "", err
+	}
+	pem, err := os.ReadFile(host)
+	if err != nil {
+		return "", fmt.Errorf("ca_cert: %w", err)
+	}
+	if !x509.NewCertPool().AppendCertsFromPEM(pem) {
+		return "", fmt.Errorf("ca_cert: %s holds no PEM certificate", host)
+	}
+	return host, nil
 }

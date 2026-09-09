@@ -4,7 +4,7 @@ import "fmt"
 
 // RunSpec is the runtime-agnostic description of one container invocation.
 type RunSpec struct {
-	Image string
+	Image   string
 	Command []string
 	Args    []string
 	WorkDir string

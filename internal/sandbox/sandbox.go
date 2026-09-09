@@ -5,7 +5,6 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"path/filepath"
 	goruntime "runtime"
 	"strings"
 
@@ -20,6 +19,9 @@ import (
 const (
 	containerHome      = "/home/sandy"
 	containerWorkspace = "/workspace"
+	// containerCACert is fixed, never derived from the configured path, so a
+	// ca_cert value cannot steer where the bundle lands in the container.
+	containerCACert = "/etc/sandy/ca/endpoint.crt"
 )
 
 // Build assembles a RunSpec from the resolved config, agent manifest, profile,
@@ -79,7 +81,7 @@ func Build(cfg config.Config, m agent.Manifest, p profile.Profile, projectRoot s
 	// Per-agent inference endpoints. Translates each endpoint into env vars
 	// (OPENAI_BASE_URL / ANTHROPIC_BASE_URL), env passthrough for the API key,
 	// and optional --add-host for LAN names with no DNS.
-	if err := applyEndpoints(&spec, cfg.Agents[m.Name].Endpoints); err != nil {
+	if err := applyEndpoints(&spec, cfg.Agents[m.Name].Endpoints, projectRoot); err != nil {
 		return spec, err
 	}
 
@@ -165,8 +167,9 @@ func Build(cfg config.Config, m agent.Manifest, p profile.Profile, projectRoot s
 // applyEndpoints wires each endpoint into the runtime spec. Validates the
 // protocol, enforces per-protocol uniqueness within the agent, and rejects
 // add_host collisions with sandy-managed hostnames.
-func applyEndpoints(spec *runtime.RunSpec, endpoints []config.Endpoint) error {
+func applyEndpoints(spec *runtime.RunSpec, endpoints []config.Endpoint, projectRoot string) error {
 	seen := map[string]bool{}
+	caCert := ""
 	for _, ep := range endpoints {
 		switch ep.Protocol {
 		case "openai":
@@ -192,6 +195,10 @@ func applyEndpoints(spec *runtime.RunSpec, endpoints []config.Endpoint) error {
 			return fmt.Errorf("endpoints: unknown protocol %q (expected: openai, anthropic)", ep.Protocol)
 		}
 
+		if err := applyCACert(spec, ep, projectRoot, &caCert); err != nil {
+			return err
+		}
+
 		if strings.TrimSpace(ep.AddHost) == "" {
 			continue
 		}
@@ -209,6 +216,37 @@ func applyEndpoints(spec *runtime.RunSpec, endpoints []config.Endpoint) error {
 		}
 		spec.AddHosts[host] = ep.AddHost
 	}
+	return nil
+}
+
+// applyCACert mounts the endpoint's CA bundle and points the agent's TLS
+// client at it. NODE_EXTRA_CA_CERTS is additive - the runtime keeps its own
+// roots - unlike SSL_CERT_FILE, which would replace the system bundle for
+// every other TLS client in the container.
+//
+// Node reads a single file, so one bundle per agent: a second, different
+// ca_cert is an error rather than a silently dropped one.
+func applyCACert(spec *runtime.RunSpec, ep config.Endpoint, projectRoot string, caCert *string) error {
+	if strings.TrimSpace(ep.CACert) == "" {
+		return nil
+	}
+	host, err := config.ResolveCACert(ep.CACert, projectRoot)
+	if err != nil {
+		return err
+	}
+	if *caCert == host {
+		return nil
+	}
+	if *caCert != "" {
+		return fmt.Errorf("ca_cert: at most one bundle per agent (have %s, got %s); concatenate them into one PEM file", *caCert, host)
+	}
+	*caCert = host
+	spec.Mounts = append(spec.Mounts, runtime.Mount{
+		Source:   host,
+		Target:   containerCACert,
+		ReadOnly: true,
+	})
+	spec.Env["NODE_EXTRA_CA_CERTS"] = containerCACert
 	return nil
 }
 
@@ -275,7 +313,7 @@ func resolveExtraMount(em config.ExtraMount, projectRoot string) (runtime.Mount,
 		return runtime.Mount{}, false, fmt.Errorf("extra_mounts: mode %q must be \"ro\" or \"rw\"", em.Mode)
 	}
 
-	host, err := resolveSource(em.Source, projectRoot)
+	host, err := config.ResolveHostPath(em.Source, projectRoot, "extra_mounts")
 	if err != nil {
 		return runtime.Mount{}, false, err
 	}
@@ -291,28 +329,4 @@ func resolveExtraMount(em config.ExtraMount, projectRoot string) (runtime.Mount,
 		Target:   clean,
 		ReadOnly: em.Mode != "rw",
 	}, true, nil
-}
-
-// resolveSource expands a user-supplied host path: ~ (or ~/...) to $HOME,
-// relative paths against projectRoot. Returns an absolute, cleaned path.
-// The ~user form is not supported.
-func resolveSource(src, projectRoot string) (string, error) {
-	if strings.HasPrefix(src, "~") {
-		if src != "~" && !strings.HasPrefix(src, "~/") && !strings.HasPrefix(src, `~\`) {
-			return "", fmt.Errorf("extra_mounts: ~user form is not supported in %q (use ~ or ~/path)", src)
-		}
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("extra_mounts: cannot expand %q: %w", src, err)
-		}
-		rest := strings.TrimLeft(strings.TrimPrefix(src, "~"), `/\`)
-		src = filepath.Join(home, rest)
-	}
-	if !filepath.IsAbs(src) {
-		if projectRoot == "" {
-			return "", fmt.Errorf("extra_mounts: relative source %q requires a project root", src)
-		}
-		src = filepath.Join(projectRoot, src)
-	}
-	return filepath.Clean(src), nil
 }

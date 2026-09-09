@@ -241,3 +241,48 @@ func TestWriteRoundTrip(t *testing.T) {
 		t.Fatalf("round-trip mismatch: in=%+v out=%+v", in, out)
 	}
 }
+
+func TestLoadEndpointCACert(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	userCfg := filepath.Join(home, ".sandy", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(userCfg), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(userCfg, []byte(
+		"agents:\n  pi:\n    endpoints:\n      - protocol: openai\n        url: https://gpu/v1\n        ca_cert: ~/certs/internal.crt\n",
+	), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	eps := cfg.Agents["pi"].Endpoints
+	if len(eps) != 1 || eps[0].CACert != "~/certs/internal.crt" {
+		t.Fatalf("ca_cert not parsed: %+v", eps)
+	}
+}
+
+func TestResolveCACertRejectsNonCertificate(t *testing.T) {
+	dir := t.TempDir()
+	secret := filepath.Join(dir, "id_rsa")
+	if err := os.WriteFile(secret, []byte("-----BEGIN OPENSSH PRIVATE KEY-----\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ResolveCACert(secret, ""); err == nil {
+		t.Fatal("ca_cert must not accept a file holding no certificate")
+	}
+	if _, err := ResolveCACert(filepath.Join(dir, "absent.crt"), ""); err == nil {
+		t.Fatal("ca_cert must not accept a missing file")
+	}
+}
+
+func TestResolveHostPathRejectsTildeUser(t *testing.T) {
+	if _, err := ResolveHostPath("~other/certs/ca.crt", "/proj", "ca_cert"); err == nil {
+		t.Fatal("~user form must be rejected")
+	}
+	if _, err := ResolveHostPath("certs/ca.crt", "", "ca_cert"); err == nil {
+		t.Fatal("a relative path without a project root must be rejected")
+	}
+}

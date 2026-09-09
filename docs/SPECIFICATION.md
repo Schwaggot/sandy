@@ -120,8 +120,8 @@ agents:
   qwen:
     endpoints:
       - protocol: openai
-        url: http://halo:8080/v1
-        add_host: 192.168.188.105
+        url: https://gpu.internal/llamacpp/v1
+        ca_cert: ~/certs/internal-ca.crt   # server behind an internal CA
 ```
 
 Schema:
@@ -131,8 +131,22 @@ Schema:
 - `add_host` (optional): IP for the URL's hostname. Used when the container cannot resolve the name (LAN-only / mDNS hosts). The hostname is parsed from `url`. Cannot override `host.docker.internal`.
 - `provider` (optional): the id this endpoint is registered under in the agent's own config (pi's `models.json` key, opencode's provider key). Needed by agents whose model flag takes a `provider/model` pair.
 - `prefer` (optional): glob patterns, tried in order, used only to break a tie when the endpoint serves several models.
+- `ca_cert` (optional): host path to a PEM CA bundle trusted for this endpoint, for a server behind an internal CA. Same path forms as `extra_mounts.source` (absolute, `~/...`, or relative to the project root).
 
 Per agent, at most one entry per protocol after merging. Duplicates error.
+
+### Internal CAs (`ca_cert`)
+
+Two TLS clients have to trust the endpoint, and `ca_cert` covers both:
+
+- **Host side**: model discovery adds the bundle to the system roots for that lookup. Setting an explicit root pool also switches Go to its own verifier, which is what makes an internal CA usable when the leaf trips a platform policy - macOS rejects TLS certificates whose validity exceeds 398 days with `certificate is not standards compliant`, however the CA is trusted.
+- **Container side**: the file is bind-mounted read-only at `/etc/sandy/ca/endpoint.crt` and `NODE_EXTRA_CA_CERTS` points the agent at it. That is additive - the runtime keeps its own roots. Sandy deliberately does not set `SSL_CERT_FILE`, which would replace the whole bundle and break TLS to every other host.
+
+The container path is a constant and is never derived from the configured path, so a `ca_cert` value cannot steer where the file lands. The file must hold at least one PEM certificate; anything else is an error rather than a mount, so a project-level config cannot name an arbitrary host file and have it appear in the container.
+
+Point it at a CA bundle, not at a file that also holds a private key: the whole file is what gets mounted. (A project-level `extra_mounts` entry can already bind any host path, so this is a narrower door than one sandy leaves open anyway - but the bundle is the right thing to name here.)
+
+Node reads a single file, so one bundle per agent: a second, different `ca_cert` is an error. Concatenate the PEMs if you need more than one.
 
 Translation:
 
@@ -140,6 +154,8 @@ Translation:
 |-----------|------------------------------------------------------|-------------------------|
 | `openai`  | `OPENAI_BASE_URL=<url>`                              | `OPENAI_API_KEY`        |
 | `anthropic` | `ANTHROPIC_BASE_URL=<url>` (omitted if default URL) | `ANTHROPIC_API_KEY`     |
+
+An endpoint with `ca_cert` additionally sets `NODE_EXTRA_CA_CERTS=/etc/sandy/ca/endpoint.crt`.
 
 API keys are forwarded by name only (`docker -e KEY`), so values never appear in dry-run output or process listings. If your key lives under a non-standard host env var, alias it: `export OPENAI_API_KEY=$MY_TOKEN`.
 

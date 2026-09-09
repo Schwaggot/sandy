@@ -1,11 +1,19 @@
 package sandbox
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"os"
 	"path/filepath"
 	goruntime "runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/schwaggot/sandy/internal/agent"
 	"github.com/schwaggot/sandy/internal/config"
@@ -869,5 +877,174 @@ func TestBuildEnvPassthroughDeduped(t *testing.T) {
 	}
 	if n != 1 {
 		t.Errorf("OPENAI_API_KEY forwarded %d times: %v", n, spec.EnvPassthrough)
+	}
+}
+
+// writeCACert generates a self-signed certificate and returns its PEM path.
+func writeCACert(t *testing.T, dir, name string) string {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: name},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(dir, name+".crt")
+	if err := os.WriteFile(p, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func caConfig(agentName string, eps ...config.Endpoint) config.Config {
+	return config.Config{
+		ImageRegistry: "x", Toolchain: "f",
+		Agents: map[string]config.AgentConfig{agentName: {Endpoints: eps}},
+	}
+}
+
+func TestBuildEndpointCACertMountedAndTrusted(t *testing.T) {
+	ca := writeCACert(t, t.TempDir(), "internal-ca")
+	m := newManifest(t, t.TempDir())
+	m.Name = "pi"
+	cfg := caConfig("pi", config.Endpoint{
+		Protocol: "openai", URL: "https://gpu/v1", CACert: ca,
+	})
+
+	spec, err := Build(cfg, m, newProfile(), t.TempDir(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mount := findMount(spec.Mounts, "/etc/sandy/ca/endpoint.crt")
+	if mount == nil {
+		t.Fatalf("ca_cert not mounted: %+v", spec.Mounts)
+	}
+	if mount.Source != ca {
+		t.Errorf("source: want %q got %q", ca, mount.Source)
+	}
+	if !mount.ReadOnly {
+		t.Errorf("ca_cert mount must be read-only")
+	}
+	if spec.Env["NODE_EXTRA_CA_CERTS"] != "/etc/sandy/ca/endpoint.crt" {
+		t.Errorf("NODE_EXTRA_CA_CERTS: %v", spec.Env)
+	}
+	// Additive trust only: replacing the whole bundle would break TLS to
+	// every other host the agent talks to.
+	if _, ok := spec.Env["SSL_CERT_FILE"]; ok {
+		t.Errorf("SSL_CERT_FILE must not be set: %v", spec.Env)
+	}
+}
+
+func TestBuildEndpointCACertTargetIgnoresSourcePath(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	// A traversing relative source still lands at the fixed container path.
+	ca := writeCACert(t, outside, "..evil")
+	rel, err := filepath.Rel(root, ca)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(rel, "..") {
+		t.Fatalf("test needs a traversing relative path, got %q", rel)
+	}
+	m := newManifest(t, t.TempDir())
+	m.Name = "pi"
+	cfg := caConfig("pi", config.Endpoint{Protocol: "openai", URL: "https://gpu/v1", CACert: rel})
+
+	spec, err := Build(cfg, m, newProfile(), root, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spec.Mounts) == 0 {
+		t.Fatal("no mounts")
+	}
+	for _, mt := range spec.Mounts {
+		if strings.Contains(mt.Target, "..") {
+			t.Errorf("container target must never carry source path segments: %q", mt.Target)
+		}
+	}
+	if findMount(spec.Mounts, "/etc/sandy/ca/endpoint.crt") == nil {
+		t.Errorf("ca_cert not mounted at the fixed path: %+v", spec.Mounts)
+	}
+}
+
+func TestBuildEndpointCACertNonPEMRejected(t *testing.T) {
+	dir := t.TempDir()
+	secret := filepath.Join(dir, "shadow")
+	if err := os.WriteFile(secret, []byte("root:$6$notacert\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := newManifest(t, t.TempDir())
+	m.Name = "pi"
+	cfg := caConfig("pi", config.Endpoint{Protocol: "openai", URL: "https://gpu/v1", CACert: secret})
+
+	_, err := Build(cfg, m, newProfile(), t.TempDir(), nil, nil)
+	if err == nil {
+		t.Fatal("a non-certificate file must not be mountable via ca_cert")
+	}
+	if !strings.Contains(err.Error(), "no PEM certificate") {
+		t.Errorf("error should name the cause: %v", err)
+	}
+}
+
+func TestBuildEndpointCACertMissingRejected(t *testing.T) {
+	m := newManifest(t, t.TempDir())
+	m.Name = "pi"
+	cfg := caConfig("pi", config.Endpoint{
+		Protocol: "openai", URL: "https://gpu/v1",
+		CACert: filepath.Join(t.TempDir(), "absent.crt"),
+	})
+	if _, err := Build(cfg, m, newProfile(), t.TempDir(), nil, nil); err == nil {
+		t.Fatal("missing ca_cert must be fatal")
+	}
+}
+
+func TestBuildEndpointConflictingCACertsRejected(t *testing.T) {
+	dir := t.TempDir()
+	m := newManifest(t, t.TempDir())
+	m.Name = "opencode"
+	cfg := caConfig("opencode",
+		config.Endpoint{Protocol: "openai", URL: "https://gpu/v1", CACert: writeCACert(t, dir, "one")},
+		config.Endpoint{Protocol: "anthropic", URL: "https://other/v1", CACert: writeCACert(t, dir, "two")},
+	)
+	_, err := Build(cfg, m, newProfile(), t.TempDir(), nil, nil)
+	if err == nil {
+		t.Fatal("two different ca_cert bundles must be rejected, not silently dropped")
+	}
+	if !strings.Contains(err.Error(), "one bundle per agent") {
+		t.Errorf("error should explain the limit: %v", err)
+	}
+}
+
+func TestBuildEndpointSameCACertTwiceMountedOnce(t *testing.T) {
+	ca := writeCACert(t, t.TempDir(), "shared")
+	m := newManifest(t, t.TempDir())
+	m.Name = "opencode"
+	cfg := caConfig("opencode",
+		config.Endpoint{Protocol: "openai", URL: "https://gpu/v1", CACert: ca},
+		config.Endpoint{Protocol: "anthropic", URL: "https://other/v1", CACert: ca},
+	)
+	spec, err := Build(cfg, m, newProfile(), t.TempDir(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, mt := range spec.Mounts {
+		if mt.Target == "/etc/sandy/ca/endpoint.crt" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("same bundle must mount once, got %d", n)
 	}
 }

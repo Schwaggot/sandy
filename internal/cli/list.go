@@ -93,7 +93,7 @@ func newListCmd() *cobra.Command {
 						addHost = fmt.Sprintf("  add_host=%s", ep.AddHost)
 					}
 					fmt.Printf("  %-10s %s%s\n", ep.Protocol, url, addHost)
-					fmt.Printf("             %s\n", servedBy(ep))
+					fmt.Printf("             %s\n", servedBy(ep, cwd))
 				}
 			}
 			return nil
@@ -105,14 +105,24 @@ func newListCmd() *cobra.Command {
 // servedBy reports what the endpoint currently serves, which is the only place
 // a model id exists - sandy stores none. Probing is best-effort: an endpoint
 // that is down still lists, it just cannot say what it holds.
-func servedBy(ep config.Endpoint) string {
+func servedBy(ep config.Endpoint, projectRoot string) string {
 	if strings.TrimSpace(ep.URL) == "" || ep.URL == config.AnthropicCloudURL {
 		return "serves: (cloud default; sandy does not pin a model)"
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), inference.DefaultTimeout)
 	defer cancel()
 
-	models, err := inference.List(ctx, ep.Protocol, ep.URL, os.Getenv(apiKeyEnv(ep.Protocol)), ep.AddHost)
+	caCert, err := resolveCACert(ep, projectRoot)
+	if err != nil {
+		return fmt.Sprintf("serves: (%v)", err)
+	}
+	models, err := inference.List(ctx, inference.Target{
+		Protocol: ep.Protocol,
+		BaseURL:  ep.URL,
+		APIKey:   os.Getenv(apiKeyEnv(ep.Protocol)),
+		AddHost:  ep.AddHost,
+		CACert:   caCert,
+	})
 	if err != nil {
 		return fmt.Sprintf("serves: (unreachable: %v)", err)
 	}

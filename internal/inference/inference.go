@@ -7,10 +7,13 @@ package inference
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
-	"net/url"
+	"os"
 	"path"
 	"strings"
 	"time"
@@ -50,24 +53,84 @@ type listResponse struct {
 	} `json:"data"`
 }
 
-// List fetches the models served at baseURL. protocol selects the auth header
-// style ("openai" or "anthropic"); apiKey may be empty for unauthenticated
-// local servers. addHost, when set, is the IP to retry against if the URL's
-// hostname does not resolve from the host (it only resolves in the container).
-func List(ctx context.Context, protocol, baseURL, apiKey, addHost string) ([]Model, error) {
-	models, err := list(ctx, protocol, baseURL, apiKey)
-	if err == nil || strings.TrimSpace(addHost) == "" {
-		return models, err
-	}
-	fallback, ferr := swapHost(baseURL, addHost)
-	if ferr != nil {
-		return nil, err
-	}
-	return list(ctx, protocol, fallback, apiKey)
+// Target is the endpoint to query.
+type Target struct {
+	// Protocol selects the auth header style ("openai" or "anthropic").
+	Protocol string
+	BaseURL  string
+	// APIKey may be empty for unauthenticated local servers.
+	APIKey string
+	// AddHost, when set, is the IP to retry against if the URL's hostname
+	// does not resolve from the host (it only resolves in the container).
+	AddHost string
+	// CACert is a host path to a PEM CA bundle added to the system roots for
+	// this lookup. Empty uses the system roots alone.
+	CACert string
 }
 
-func list(ctx context.Context, protocol, baseURL, apiKey string) ([]Model, error) {
-	u := strings.TrimSuffix(baseURL, "/") + "/models"
+// List fetches the models served at the target's URL.
+func List(ctx context.Context, t Target) ([]Model, error) {
+	client, err := clientFor(t, "")
+	if err != nil {
+		return nil, err
+	}
+	models, err := list(ctx, client, t)
+	if err == nil || strings.TrimSpace(t.AddHost) == "" {
+		return models, err
+	}
+	// Retry with the hostname pinned to add_host, the way --add-host does
+	// inside the container. Only the TCP target changes: the URL, the Host
+	// header and the TLS name stay as configured, so an https endpoint is
+	// still verified against its own name and not against a bare IP.
+	pinned, perr := clientFor(t, t.AddHost)
+	if perr != nil {
+		return nil, err
+	}
+	return list(ctx, pinned, t)
+}
+
+// clientFor returns the client for one lookup. A ca_cert endpoint gets its own
+// root pool: the system roots plus that bundle. Setting RootCAs also switches
+// Go to its own verifier, which is what lets an internal CA whose leaf breaks a
+// platform policy (macOS caps TLS validity at 398 days) work.
+func clientFor(t Target, pinIP string) (*http.Client, error) {
+	caCert := strings.TrimSpace(t.CACert)
+	if caCert == "" && pinIP == "" {
+		return http.DefaultClient, nil
+	}
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	if caCert != "" {
+		pemBytes, err := os.ReadFile(caCert)
+		if err != nil {
+			return nil, fmt.Errorf("ca_cert: %w", err)
+		}
+		// An unreadable system pool narrows trust to this bundle alone, which
+		// is still the right answer for the endpoint it belongs to.
+		pool, err := x509.SystemCertPool()
+		if err != nil {
+			pool = x509.NewCertPool()
+		}
+		if !pool.AppendCertsFromPEM(pemBytes) {
+			return nil, fmt.Errorf("ca_cert: %s holds no PEM certificate", caCert)
+		}
+		tr.TLSClientConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
+	}
+	if pinIP != "" {
+		d := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
+		tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			_, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			return d.DialContext(ctx, network, net.JoinHostPort(pinIP, port))
+		}
+	}
+	return &http.Client{Transport: tr}, nil
+}
+
+func list(ctx context.Context, client *http.Client, t Target) ([]Model, error) {
+	protocol, apiKey := t.Protocol, t.APIKey
+	u := strings.TrimSuffix(t.BaseURL, "/") + "/models"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
@@ -82,7 +145,7 @@ func list(ctx context.Context, protocol, baseURL, apiKey string) ([]Model, error
 		}
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -128,18 +191,4 @@ func Select(models []Model, prefer []string) (Model, bool) {
 		}
 	}
 	return models[0], true
-}
-
-// swapHost rewrites the URL's hostname to ip, keeping the port and path.
-func swapHost(raw, ip string) (string, error) {
-	u, err := url.Parse(raw)
-	if err != nil || u.Hostname() == "" {
-		return "", fmt.Errorf("cannot parse hostname from url %q: %v", raw, err)
-	}
-	host := ip
-	if port := u.Port(); port != "" {
-		host = ip + ":" + port
-	}
-	u.Host = host
-	return u.String(), nil
 }
