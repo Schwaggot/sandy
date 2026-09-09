@@ -107,7 +107,7 @@ func resolveModels(m agent.Manifest, endpoints []config.Endpoint, projectRoot st
 		served, err := inference.List(ctx, inference.Target{
 			Protocol: ep.Protocol,
 			BaseURL:  url,
-			APIKey:   os.Getenv(apiKeyEnv(ep.Protocol)),
+			APIKey:   endpointAPIKey(ep),
 			AddHost:  ep.AddHost,
 			CACert:   caCert,
 		})
@@ -131,6 +131,16 @@ func resolveCACert(ep config.Endpoint, projectRoot string) (string, error) {
 		return "", nil
 	}
 	return config.ResolveCACert(ep.CACert, projectRoot)
+}
+
+// endpointAPIKey is the credential used for the host-side lookup. A no_auth
+// endpoint gets none: the same reasoning as in the container, plus an
+// unauthenticated server has no reason to see the host's cloud key.
+func endpointAPIKey(ep config.Endpoint) string {
+	if ep.NoAuth {
+		return ""
+	}
+	return os.Getenv(apiKeyEnv(ep.Protocol))
 }
 
 func apiKeyEnv(protocol string) string {

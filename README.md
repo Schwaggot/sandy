@@ -62,6 +62,9 @@ https://github.com/<user>?tab=packages and skip the login entirely.
   login cached in `~/.qwen/settings.json`. It injects neither if no endpoint is
   configured, if the endpoint is unreachable, or if you pinned a model yourself
   with `-m` - qwen then falls back to that cached config and its `/auth` prompt.
+  Qwen also refuses to start without a credential, even against a server that
+  wants none: set `no_auth: true` on the endpoint and sandy supplies a
+  placeholder, otherwise you land in its "Connect a Provider" wizard.
 - **Local model endpoints (LM Studio etc.)**: use `host.docker.internal` as
   the hostname in your agent config, not `127.0.0.1` or `localhost` (those
   refer to the container, not the host). Sandy already adds the host-gateway

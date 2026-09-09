@@ -1048,3 +1048,82 @@ func TestBuildEndpointSameCACertTwiceMountedOnce(t *testing.T) {
 		t.Errorf("same bundle must mount once, got %d", n)
 	}
 }
+
+func TestBuildEndpointNoAuthUsesPlaceholder(t *testing.T) {
+	m := newManifest(t, t.TempDir())
+	m.Name = "qwen"
+	// The manifest forwards the key, and the host has one set: neither may
+	// reach an endpoint that declared it needs no credentials.
+	m.EnvPassthrough = []string{"OPENAI_API_KEY"}
+	t.Setenv("OPENAI_API_KEY", "sk-real-cloud-key")
+
+	cfg := caConfig("qwen", config.Endpoint{
+		Protocol: "openai", URL: "https://gpu/v1", NoAuth: true,
+	})
+	spec, err := Build(cfg, m, newProfile(), t.TempDir(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.Env["OPENAI_API_KEY"] != "sandy-no-auth" {
+		t.Errorf("placeholder key: %v", spec.Env)
+	}
+	if contains(spec.EnvPassthrough, "OPENAI_API_KEY") {
+		t.Errorf("host key must not be forwarded to a no_auth endpoint: %v", spec.EnvPassthrough)
+	}
+}
+
+func TestBuildEndpointWithoutNoAuthForwardsHostKey(t *testing.T) {
+	m := newManifest(t, t.TempDir())
+	m.Name = "qwen"
+	m.EnvPassthrough = []string{"OPENAI_API_KEY"}
+	t.Setenv("OPENAI_API_KEY", "sk-real-cloud-key")
+
+	cfg := caConfig("qwen", config.Endpoint{Protocol: "openai", URL: "https://gpu/v1"})
+	spec, err := Build(cfg, m, newProfile(), t.TempDir(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(spec.EnvPassthrough, "OPENAI_API_KEY") {
+		t.Errorf("key should be forwarded by name: %v", spec.EnvPassthrough)
+	}
+	if _, ok := spec.Env["OPENAI_API_KEY"]; ok {
+		t.Errorf("key value must never be copied into Env: %v", spec.Env)
+	}
+}
+
+func TestBuildAnthropicNoAuth(t *testing.T) {
+	m := newManifest(t, t.TempDir())
+	m.Name = "claude"
+	cfg := caConfig("claude", config.Endpoint{
+		Protocol: "anthropic", URL: "https://proxy/v1", NoAuth: true,
+	})
+	spec, err := Build(cfg, m, newProfile(), t.TempDir(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spec.Env["ANTHROPIC_API_KEY"] != "sandy-no-auth" {
+		t.Errorf("placeholder key: %v", spec.Env)
+	}
+	if contains(spec.EnvPassthrough, "ANTHROPIC_API_KEY") {
+		t.Errorf("host key must not be forwarded: %v", spec.EnvPassthrough)
+	}
+}
+
+func TestBuildAnthropicCloudNoAuthRejected(t *testing.T) {
+	m := newManifest(t, t.TempDir())
+	m.Name = "claude"
+	for name, url := range map[string]string{
+		"omitted url": "",
+		"explicit":    config.AnthropicCloudURL,
+	} {
+		cfg := caConfig("claude", config.Endpoint{Protocol: "anthropic", URL: url, NoAuth: true})
+		_, err := Build(cfg, m, newProfile(), t.TempDir(), nil, nil)
+		if err == nil {
+			t.Errorf("%s: no_auth against the Anthropic cloud must be rejected", name)
+			continue
+		}
+		if !strings.Contains(err.Error(), "no_auth") {
+			t.Errorf("%s: error should name the field: %v", name, err)
+		}
+	}
+}

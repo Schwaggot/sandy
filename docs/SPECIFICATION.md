@@ -122,6 +122,7 @@ agents:
       - protocol: openai
         url: https://gpu.internal/llamacpp/v1
         ca_cert: ~/certs/internal-ca.crt   # server behind an internal CA
+        no_auth: true                      # and it takes no API key
 ```
 
 Schema:
@@ -131,6 +132,7 @@ Schema:
 - `add_host` (optional): IP for the URL's hostname. Used when the container cannot resolve the name (LAN-only / mDNS hosts). The hostname is parsed from `url`. Cannot override `host.docker.internal`.
 - `provider` (optional): the id this endpoint is registered under in the agent's own config (pi's `models.json` key, opencode's provider key). Needed by agents whose model flag takes a `provider/model` pair.
 - `prefer` (optional): glob patterns, tried in order, used only to break a tie when the endpoint serves several models.
+- `no_auth` (optional, default false): the server takes no credentials. Sandy then hands the agent a placeholder key (`sandy-no-auth`) instead of forwarding the host's, so agents that refuse to start without one still launch - and a cloud key on the host is never sent to a self-hosted box. The host-side `/models` lookup drops the auth header too.
 - `ca_cert` (optional): host path to a PEM CA bundle trusted for this endpoint, for a server behind an internal CA. Same path forms as `extra_mounts.source` (absolute, `~/...`, or relative to the project root).
 
 Per agent, at most one entry per protocol after merging. Duplicates error.
@@ -156,6 +158,12 @@ Translation:
 | `anthropic` | `ANTHROPIC_BASE_URL=<url>` (omitted if default URL) | `ANTHROPIC_API_KEY`     |
 
 An endpoint with `ca_cert` additionally sets `NODE_EXTRA_CA_CERTS=/etc/sandy/ca/endpoint.crt`.
+
+With `no_auth: true` the key column changes: sandy sets `OPENAI_API_KEY=sandy-no-auth` (or `ANTHROPIC_API_KEY`) as an explicit value and forwards nothing. An explicit value always wins over passthrough, so the manifest's `env_passthrough` entry for that key is skipped rather than emitted as a second, conflicting `-e` flag.
+
+Without it, an agent that demands a credential (Qwen Code is one - it opens its "Connect a Provider" wizard) cannot be used against an unauthenticated local server.
+
+`no_auth` on the stock Anthropic cloud URL is rejected: the placeholder would only turn a working key into an upstream 401.
 
 API keys are forwarded by name only (`docker -e KEY`), so values never appear in dry-run output or process listings. If your key lives under a non-standard host env var, alias it: `export OPENAI_API_KEY=$MY_TOKEN`.
 

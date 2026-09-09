@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 
@@ -119,7 +118,7 @@ func servedBy(ep config.Endpoint, projectRoot string) string {
 	models, err := inference.List(ctx, inference.Target{
 		Protocol: ep.Protocol,
 		BaseURL:  ep.URL,
-		APIKey:   os.Getenv(apiKeyEnv(ep.Protocol)),
+		APIKey:   endpointAPIKey(ep),
 		AddHost:  ep.AddHost,
 		CACert:   caCert,
 	})

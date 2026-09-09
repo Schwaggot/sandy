@@ -286,3 +286,34 @@ func TestResolveHostPathRejectsTildeUser(t *testing.T) {
 		t.Fatal("a relative path without a project root must be rejected")
 	}
 }
+
+// no_auth and ca_cert are only ever set from YAML, so the struct tags are the
+// contract: a typo there disables the feature while every Go-level test still
+// passes.
+func TestLoadEndpointNoAuth(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	userCfg := filepath.Join(home, ".sandy", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(userCfg), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(userCfg, []byte(
+		"agents:\n  qwen:\n    endpoints:\n      - protocol: openai\n        url: https://gpu/v1\n        no_auth: true\n      - protocol: anthropic\n",
+	), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	eps := cfg.Agents["qwen"].Endpoints
+	if len(eps) != 2 {
+		t.Fatalf("endpoints: %+v", eps)
+	}
+	if !eps[0].NoAuth {
+		t.Errorf("no_auth not parsed: %+v", eps[0])
+	}
+	if eps[1].NoAuth {
+		t.Errorf("no_auth must default to false: %+v", eps[1])
+	}
+}

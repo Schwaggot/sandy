@@ -22,6 +22,10 @@ const (
 	// containerCACert is fixed, never derived from the configured path, so a
 	// ca_cert value cannot steer where the bundle lands in the container.
 	containerCACert = "/etc/sandy/ca/endpoint.crt"
+	// placeholderAPIKey satisfies agents that refuse to start without a key
+	// when the endpoint takes none. Deliberately not key-shaped: it is meant
+	// to be recognizable in a server log, and it is not a secret.
+	placeholderAPIKey = "sandy-no-auth"
 )
 
 // Build assembles a RunSpec from the resolved config, agent manifest, profile,
@@ -120,6 +124,11 @@ func Build(cfg config.Config, m agent.Manifest, p profile.Profile, projectRoot s
 	// dry-run output and process listings.
 	passthrough := append([]string{"TERM", "COLORTERM"}, m.EnvPassthrough...)
 	for _, k := range passthrough {
+		if _, explicit := spec.Env[k]; explicit {
+			// An explicit value wins. Forwarding the host variable as well
+			// would hand docker two conflicting -e flags for one name.
+			continue
+		}
 		if _, ok := os.LookupEnv(k); ok {
 			// Dedup: applyEndpoints already added the protocol's key.
 			appendUnique(&spec.EnvPassthrough, k)
@@ -181,16 +190,23 @@ func applyEndpoints(spec *runtime.RunSpec, endpoints []config.Endpoint, projectR
 			}
 			seen[ep.Protocol] = true
 			spec.Env["OPENAI_BASE_URL"] = ep.URL
-			appendUnique(&spec.EnvPassthrough, "OPENAI_API_KEY")
+			applyAPIKey(spec, ep, "OPENAI_API_KEY")
 		case "anthropic":
 			if seen[ep.Protocol] {
 				return fmt.Errorf("endpoints: duplicate %q protocol entries for the same agent", ep.Protocol)
 			}
 			seen[ep.Protocol] = true
-			if u := strings.TrimSpace(ep.URL); u != "" && u != config.AnthropicCloudURL {
+			u := strings.TrimSpace(ep.URL)
+			if ep.NoAuth && (u == "" || u == config.AnthropicCloudURL) {
+				// The placeholder would replace a working key with a
+				// guaranteed 401 from Anthropic. Say so here rather than
+				// leave the user reading an upstream auth error.
+				return fmt.Errorf("endpoints: no_auth is not valid for %s, which always requires a key", config.AnthropicCloudURL)
+			}
+			if u != "" && u != config.AnthropicCloudURL {
 				spec.Env["ANTHROPIC_BASE_URL"] = u
 			}
-			appendUnique(&spec.EnvPassthrough, "ANTHROPIC_API_KEY")
+			applyAPIKey(spec, ep, "ANTHROPIC_API_KEY")
 		default:
 			return fmt.Errorf("endpoints: unknown protocol %q (expected: openai, anthropic)", ep.Protocol)
 		}
@@ -217,6 +233,19 @@ func applyEndpoints(spec *runtime.RunSpec, endpoints []config.Endpoint, projectR
 		spec.AddHosts[host] = ep.AddHost
 	}
 	return nil
+}
+
+// applyAPIKey decides how the agent gets its credential for one endpoint.
+// Normally the host variable is forwarded by name. An endpoint marked no_auth
+// gets a placeholder value instead, and the host's key is deliberately not
+// forwarded: a self-hosted server has no use for it, and sending a cloud
+// credential to someone else's box is not something sandy should do quietly.
+func applyAPIKey(spec *runtime.RunSpec, ep config.Endpoint, keyVar string) {
+	if ep.NoAuth {
+		spec.Env[keyVar] = placeholderAPIKey
+		return
+	}
+	appendUnique(&spec.EnvPassthrough, keyVar)
 }
 
 // applyCACert mounts the endpoint's CA bundle and points the agent's TLS

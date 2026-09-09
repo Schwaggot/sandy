@@ -56,6 +56,10 @@ type Endpoint struct {
 	// than one model. No model id is ever configured statically; this only
 	// breaks the tie. First pattern matching a served model wins.
 	Prefer []string `yaml:"prefer"`
+	// NoAuth marks a server that needs no credentials. Agents that refuse to
+	// start without an API key get a placeholder, and the host's real key is
+	// neither forwarded to the container nor sent to this endpoint.
+	NoAuth bool `yaml:"no_auth"`
 	// CACert is a host path to a PEM CA bundle trusted for this endpoint,
 	// for servers behind an internal CA. Sandy uses it for host-side model
 	// discovery and bind-mounts it into the container for the agent itself.
