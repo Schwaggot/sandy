@@ -24,13 +24,13 @@ argument is given).
 This is the recommended way to update your sandbox images after the CI
 workflow pushes new images to the registry.`,
 		Args: cobra.MaximumNArgs(1),
-		RunE: func(c *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			// A failed binary update must not block the image refresh;
 			// warn, carry on, and surface the error in the exit code.
 			var binErr error
 			if err := selfupdate.New().Run(Version, os.Stdout); err != nil {
 				binErr = fmt.Errorf("binary self-update failed: %w", err)
-				fmt.Fprintf(os.Stderr, "sandy: warning: %v\n", binErr)
+				_, _ = fmt.Fprintf(os.Stderr, "sandy: warning: %v\n", binErr)
 			}
 
 			cwd, _ := project.Cwd()

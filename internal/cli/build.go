@@ -15,7 +15,7 @@ func newBuildCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "build",
 		Short: "Build the project-local image from .sandy/Dockerfile",
-		RunE: func(c *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			cwd, err := project.Cwd()
 			if err != nil {
 				return err

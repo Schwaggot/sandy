@@ -21,7 +21,7 @@ func newAgentCmd(name string, m agent.Manifest) *cobra.Command {
 		Use:                name + " [-- args...]",
 		Short:              m.Description,
 		DisableFlagParsing: false,
-		RunE: func(c *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			return runAgent(m, args)
 		},
 	}
@@ -112,7 +112,7 @@ func resolveModels(m agent.Manifest, endpoints []config.Endpoint, projectRoot st
 			CACert:   caCert,
 		})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "sandy: warning: %s endpoint %s: %v (agent picks its own model)\n", ep.Protocol, url, err)
+			_, _ = fmt.Fprintf(os.Stderr, "sandy: warning: %s endpoint %s: %v (agent picks its own model)\n", ep.Protocol, url, err)
 			continue
 		}
 		sel, ok := inference.Select(served, ep.Prefer)

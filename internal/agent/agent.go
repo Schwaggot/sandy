@@ -1,3 +1,5 @@
+// Package agent loads the manifests describing each supported agent: its
+// image, how to launch it, and the host config it needs mounted.
 package agent
 
 import (
@@ -13,6 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Manifest is one agent definition, bundled or user-supplied.
 type Manifest struct {
 	Name           string        `yaml:"name"`
 	Description    string        `yaml:"description"`
@@ -97,6 +100,8 @@ func (s ModelSpec) UserPinned(args []string) bool {
 	return false
 }
 
+// ConfigMount is a host config path the agent needs inside the container,
+// named per OS because the agents disagree on where their config lives.
 type ConfigMount struct {
 	Host      map[string]string `yaml:"host"` // os -> path
 	Container string            `yaml:"container"`
@@ -104,6 +109,7 @@ type ConfigMount struct {
 	Optional  bool              `yaml:"optional"`
 }
 
+// HostPath returns the path for the current OS, false when none is declared.
 func (m ConfigMount) HostPath() (string, bool) {
 	p, ok := m.Host[runtime.GOOS]
 	if !ok {
@@ -161,6 +167,7 @@ func LoadAll() (map[string]Manifest, []error, error) {
 		out[m.Name] = m
 	}
 
+	// No home dir, or no ~/.sandy/agents: the bundled set is the whole answer.
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return out, warnings, nil
@@ -195,6 +202,7 @@ func LoadAll() (map[string]Manifest, []error, error) {
 	return out, warnings, nil
 }
 
+// Get returns one manifest by name. User files win over bundled ones.
 func Get(name string) (Manifest, error) {
 	all, _, err := LoadAll()
 	if err != nil {

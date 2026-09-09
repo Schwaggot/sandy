@@ -13,7 +13,7 @@ func newCleanCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "clean",
 		Short: "Remove cache and home volumes for this project",
-		RunE: func(c *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			cwd, err := project.Cwd()
 			if err != nil {
 				return err

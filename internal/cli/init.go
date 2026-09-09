@@ -23,7 +23,7 @@ func newInitCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Detect toolchains and write .sandy/config.yaml in the current directory",
-		RunE: func(c *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			cwd, err := project.Cwd()
 			if err != nil {
 				return err

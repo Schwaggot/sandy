@@ -1,3 +1,5 @@
+// Package sandbox assembles the RunSpec from config, manifest and profile.
+// It is the single place that decides what the container can see and do.
 package sandbox
 
 import (

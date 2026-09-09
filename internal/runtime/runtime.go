@@ -1,3 +1,5 @@
+// Package runtime turns a RunSpec into a container invocation. Docker is the
+// only implementation today; podman is stubbed out.
 package runtime
 
 import "fmt"
@@ -32,6 +34,7 @@ type RunSpec struct {
 	Name           string
 }
 
+// Mount is one bind mount or named volume in the container.
 type Mount struct {
 	Source   string // host path or volume name
 	Target   string
@@ -39,6 +42,7 @@ type Mount struct {
 	Volume   bool // true = named volume, false = bind
 }
 
+// Runtime is the container engine sandy shells out to.
 type Runtime interface {
 	Name() string
 	Run(spec RunSpec) error
@@ -50,6 +54,7 @@ type Runtime interface {
 	Available() error
 }
 
+// Select returns the runtime for name; empty means docker.
 func Select(name string) (Runtime, error) {
 	switch name {
 	case "", "docker":

@@ -33,7 +33,7 @@ func TestListParsesModelsAndContext(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer k" {
 			t.Errorf("auth header: %q", got)
 		}
-		w.Write([]byte(llamaCppBody))
+		_, _ = w.Write([]byte(llamaCppBody))
 	}))
 	defer srv.Close()
 
@@ -54,7 +54,7 @@ func TestListAnthropicUsesAPIKeyHeader(t *testing.T) {
 		if r.Header.Get("x-api-key") != "k" || r.Header.Get("anthropic-version") == "" {
 			t.Errorf("headers: %v", r.Header)
 		}
-		w.Write([]byte(`{"data":[{"id":"claude-x"}]}`))
+		_, _ = w.Write([]byte(`{"data":[{"id":"claude-x"}]}`))
 	}))
 	defer srv.Close()
 
@@ -72,7 +72,7 @@ func TestListTrailingSlashAndErrors(t *testing.T) {
 		if r.URL.Path != "/v1/models" {
 			t.Errorf("path: %q", r.URL.Path)
 		}
-		w.Write([]byte(`{"data":[]}`))
+		_, _ = w.Write([]byte(`{"data":[]}`))
 	}))
 	defer srv.Close()
 
@@ -84,7 +84,7 @@ func TestListTrailingSlashAndErrors(t *testing.T) {
 }
 
 func TestListStatusError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "nope", http.StatusUnauthorized)
 	}))
 	defer srv.Close()
@@ -98,8 +98,8 @@ func TestListStatusError(t *testing.T) {
 // A hostname that only resolves inside the container must fall back to the
 // add_host IP for the host-side lookup.
 func TestListFallsBackToAddHost(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"data":[{"id":"local"}]}`))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[{"id":"local"}]}`))
 	}))
 	defer srv.Close()
 
@@ -143,8 +143,8 @@ func TestSelect(t *testing.T) {
 }
 
 func TestListTLSNeedsCACert(t *testing.T) {
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(llamaCppBody))
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(llamaCppBody))
 	}))
 	defer srv.Close()
 
@@ -237,7 +237,7 @@ func TestListAddHostRetryKeepsTLSHostname(t *testing.T) {
 		if !strings.HasPrefix(r.Host, name+":") {
 			t.Errorf("Host header should stay the configured name, got %q", r.Host)
 		}
-		w.Write([]byte(llamaCppBody))
+		_, _ = w.Write([]byte(llamaCppBody))
 	}))
 	srv.TLS = &tls.Config{Certificates: []tls.Certificate{cert}}
 	srv.StartTLS()

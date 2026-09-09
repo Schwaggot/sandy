@@ -16,7 +16,7 @@ func newDoctorCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
 		Short: "Check sandy environment health",
-		RunE: func(c *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			cwd, _ := project.Cwd()
 			root := project.Root(cwd)
 			cfg, err := config.Load(root)

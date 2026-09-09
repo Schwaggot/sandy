@@ -64,7 +64,7 @@ func checksumLine(name string, data []byte) string {
 func newTestUpdater(t *testing.T, version string, assets map[string][]byte) *Updater {
 	t.Helper()
 	mux := http.NewServeMux()
-	mux.HandleFunc("/repos/test/sandy/releases/latest", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/repos/test/sandy/releases/latest", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = fmt.Fprintf(w, `{"tag_name":"v%s"}`, version)
 	})
 	mux.HandleFunc("/test/sandy/releases/download/", func(w http.ResponseWriter, r *http.Request) {

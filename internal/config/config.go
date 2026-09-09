@@ -1,3 +1,5 @@
+// Package config resolves the layered configuration: built-in defaults,
+// then ~/.sandy/config.yaml, then the project's .sandy/config.yaml.
 package config
 
 import (
@@ -11,6 +13,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// The lowest layer of the config merge, plus the one upstream URL sandy
+// treats specially.
 const (
 	DefaultRegistry  = "ghcr.io/schwaggot"
 	DefaultProfile   = "open"

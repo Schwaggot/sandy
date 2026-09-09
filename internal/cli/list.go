@@ -22,7 +22,7 @@ func newListCmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "agents",
 		Short: "List available agents",
-		RunE: func(c *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			agents, _, err := agent.LoadAll()
 			if err != nil {
 				return err
@@ -41,7 +41,7 @@ func newListCmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "profiles",
 		Short: "List available profiles",
-		RunE: func(c *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			profs, _, err := profile.LoadAll()
 			if err != nil {
 				return err
@@ -61,7 +61,7 @@ func newListCmd() *cobra.Command {
 	cmd.AddCommand(&cobra.Command{
 		Use:   "endpoints",
 		Short: "List configured inference endpoints (merged user + project)",
-		RunE: func(c *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			cwd, _ := project.Cwd()
 			cfg, err := config.Load(cwd)
 			if err != nil {

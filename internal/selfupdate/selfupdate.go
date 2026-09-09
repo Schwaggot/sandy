@@ -34,6 +34,7 @@ type Updater struct {
 	Client   *http.Client
 }
 
+// New returns an Updater pointed at the public sandy repo.
 func New() *Updater {
 	return &Updater{
 		Repo:    "schwaggot/sandy",

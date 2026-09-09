@@ -1,3 +1,5 @@
+// Package profile loads the sandbox postures - network, resource limits and
+// hardening - that a run is launched under.
 package profile
 
 import (
@@ -11,6 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Profile is one sandbox posture, bundled or user-supplied.
 type Profile struct {
 	Name             string    `yaml:"name"`
 	Network          string    `yaml:"network"` // offline | open | restricted
@@ -19,12 +22,15 @@ type Profile struct {
 	AllowlistDomains []string  `yaml:"allowlist_domains"`
 }
 
+// Resources caps what the container may consume.
 type Resources struct {
 	Memory string `yaml:"memory"`
 	CPUs   string `yaml:"cpus"`
 	Pids   int    `yaml:"pids"`
 }
 
+// Hardening holds the privilege and filesystem restrictions applied to the
+// container.
 type Hardening struct {
 	CapDrop         []string `yaml:"cap_drop"`
 	CapAdd          []string `yaml:"cap_add"`
@@ -65,6 +71,7 @@ func LoadAll() (map[string]Profile, []error, error) {
 		out[p.Name] = p
 	}
 
+	// No home dir, or no ~/.sandy/profiles: the bundled set is the whole answer.
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return out, warnings, nil
@@ -98,6 +105,7 @@ func LoadAll() (map[string]Profile, []error, error) {
 	return out, warnings, nil
 }
 
+// Get returns one profile by name. User files win over bundled ones.
 func Get(name string) (Profile, error) {
 	all, _, err := LoadAll()
 	if err != nil {

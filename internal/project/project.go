@@ -1,3 +1,5 @@
+// Package project inspects the working directory: its root, a stable hash
+// used to name per-project volumes, and toolchain detection.
 package project
 
 import (
@@ -84,6 +86,7 @@ func PickToolchain(detected []string) string {
 	return "fullstack"
 }
 
+// Cwd is os.Getwd with sandy's error wording.
 func Cwd() (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {

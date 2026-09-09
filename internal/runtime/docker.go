@@ -9,16 +9,20 @@ import (
 	"strings"
 )
 
+// Docker drives the docker CLI.
 type Docker struct {
 	bin string
 }
 
+// NewDocker returns a Docker using the docker binary on PATH.
 func NewDocker() *Docker {
 	return &Docker{bin: "docker"}
 }
 
+// Name identifies this runtime in config and error messages.
 func (d *Docker) Name() string { return "docker" }
 
+// Available reports whether a docker daemon answers.
 func (d *Docker) Available() error {
 	cmd := exec.Command(d.bin, "version", "--format", "{{.Server.Version}}")
 	out, err := cmd.CombinedOutput()
@@ -28,6 +32,8 @@ func (d *Docker) Available() error {
 	return nil
 }
 
+// BuildArgs renders the spec as docker run arguments. This is exactly what
+// --dry-run prints, so it must never contain a secret value.
 func (d *Docker) BuildArgs(spec RunSpec) []string {
 	args := []string{"run"}
 	if spec.AutoRemove {
@@ -116,6 +122,7 @@ func envSorted(env map[string]string) []string {
 	return out
 }
 
+// Run starts the container with the caller's stdio attached.
 func (d *Docker) Run(spec RunSpec) error {
 	args := d.BuildArgs(spec)
 	cmd := exec.Command(d.bin, args...)
@@ -125,6 +132,7 @@ func (d *Docker) Run(spec RunSpec) error {
 	return cmd.Run()
 }
 
+// Build builds an image from a project-local Dockerfile.
 func (d *Docker) Build(contextDir, dockerfile, tag string) error {
 	args := []string{"build", "-t", tag}
 	if dockerfile != "" {
@@ -138,6 +146,7 @@ func (d *Docker) Build(contextDir, dockerfile, tag string) error {
 	return cmd.Run()
 }
 
+// Pull fetches an image.
 func (d *Docker) Pull(image string) error {
 	cmd := exec.Command(d.bin, "pull", image)
 	cmd.Stdout = os.Stdout
@@ -145,6 +154,7 @@ func (d *Docker) Pull(image string) error {
 	return cmd.Run()
 }
 
+// VolumeList returns volume names, optionally filtered by prefix.
 func (d *Docker) VolumeList(prefix string) ([]string, error) {
 	cmd := exec.Command(d.bin, "volume", "ls", "--format", "{{.Name}}")
 	out, err := cmd.Output()
@@ -162,6 +172,7 @@ func (d *Docker) VolumeList(prefix string) ([]string, error) {
 	return names, sc.Err()
 }
 
+// VolumeRemove deletes one volume.
 func (d *Docker) VolumeRemove(name string) error {
 	cmd := exec.Command(d.bin, "volume", "rm", name)
 	cmd.Stdout = os.Stdout

@@ -1,3 +1,5 @@
+// Package cli builds the cobra command tree: one subcommand per agent
+// manifest, plus the housekeeping commands.
 package cli
 
 import (
@@ -14,6 +16,7 @@ var (
 	flagDryRun  bool
 )
 
+// Execute runs the sandy command tree.
 func Execute() error {
 	root := newRootCmd()
 	return root.Execute()
@@ -34,10 +37,10 @@ func newRootCmd() *cobra.Command {
 	// Dynamic agent subcommands.
 	agents, warnings, err := agent.LoadAll()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "sandy: failed to load agents:", err)
+		_, _ = fmt.Fprintln(os.Stderr, "sandy: failed to load agents:", err)
 	}
 	for _, w := range warnings {
-		fmt.Fprintln(os.Stderr, "sandy: warning:", w)
+		_, _ = fmt.Fprintln(os.Stderr, "sandy: warning:", w)
 	}
 	for name, m := range agents {
 		root.AddCommand(newAgentCmd(name, m))

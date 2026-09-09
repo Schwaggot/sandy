@@ -1,3 +1,4 @@
+// Command sandy runs AI coding agents in sandboxed containers.
 package main
 
 import (
@@ -9,7 +10,7 @@ import (
 
 func main() {
 	if err := cli.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "sandy:", err)
+		_, _ = fmt.Fprintln(os.Stderr, "sandy:", err)
 		os.Exit(1)
 	}
 }

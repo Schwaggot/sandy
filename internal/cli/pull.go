@@ -15,7 +15,7 @@ func newPullCmd() *cobra.Command {
 		Use:   "pull [agent]",
 		Short: "Pull the image(s) needed for an agent (or all agents if omitted)",
 		Args:  cobra.MaximumNArgs(1),
-		RunE: func(c *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			cwd, _ := project.Cwd()
 			root := project.Root(cwd)
 			cfg, err := config.Load(root)
